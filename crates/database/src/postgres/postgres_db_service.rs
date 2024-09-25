@@ -69,7 +69,7 @@ pub struct PostgresDatabaseService {
     known_validators_cache: Arc<DashSet<BlsPublicKey>>,
     validator_pool_cache: Arc<DashMap<String, String>>,
     region: i16,
-    pool: Arc<Pool>,
+    pub pool: Arc<Pool>,
 }
 
 impl PostgresDatabaseService {

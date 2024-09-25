@@ -8,6 +8,7 @@ members = [
     "crates/datastore",
     "crates/cmd",
     "crates/housekeeper",
+    "crates/website",
 ]
 resolver = "2"
 
@@ -26,6 +27,7 @@ helix-database = { path = "./crates/database" }
 helix-datastore = { path = "./crates/datastore" }
 helix-housekeeper = { path = "./crates/housekeeper" }
 helix-utils = { path = "./crates/utils" }
+helix-website = { path = "./crates/website" }
 
 # Async and Networking 
 async-trait = "0.1"
@@ -53,7 +55,7 @@ tokio-postgres = "0.7.10"
 deadpool-postgres = "0.11.0"
 refinery = { version = "0.8", features = ["tokio-postgres"]}
 bytes = "1.5.0"
-chrono = "0.4.19"
+chrono = "0.4.38"
 
 # Ethereum Types
 ethereum-consensus = { git = "https://github.com/ralexstokes/ethereum-consensus", rev = "fc049504a200926c8bd5f0fbd3f9696c6c6f699d" }

@@ -12,6 +12,7 @@ use ethereum_consensus::deneb::BlsPublicKey;
 
 #[derive(Serialize, Deserialize, Clone, Default)]
 pub struct RelayConfig {
+    pub website: WebsiteConfig,
     pub postgres: PostgresConfig,
     pub redis: RedisConfig,
     #[serde(default)]
@@ -39,6 +40,20 @@ pub struct RelayConfig {
     pub skip_floor_bid_builder_pubkeys: Vec<BlsPublicKey>,
     #[serde(default)]
     pub discord_webhook_url: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Default)]
+pub struct WebsiteConfig {
+    pub enabled: bool,
+    pub port: u16,
+    pub listen_address: String,
+    pub show_config_details: bool,
+    pub network_name: String,
+    pub relay_url: String,
+    pub relay_pubkey: String,
+    pub link_beaconchain: String,
+    pub link_etherscan: String,
+    pub link_data_api: String,
 }
 
 impl RelayConfig {
