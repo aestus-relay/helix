@@ -1,5 +1,3 @@
-
-
 use ethereum_consensus::{
     primitives::{BlsPublicKey, Hash32},
     ssz::prelude::*,

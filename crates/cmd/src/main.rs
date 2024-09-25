@@ -1,6 +1,7 @@
 use helix_api::service::ApiService;
 use helix_common::{LoggingConfig, RelayConfig};
 use tokio::runtime::Builder;
+use helix_website::website_service::WebsiteService;
 
 async fn run() {
     let config = match RelayConfig::load() {
@@ -31,7 +32,15 @@ async fn run() {
         }
     }
 
-    ApiService::run(config).await;
+    ApiService::run(config.clone()).await;
+
+    if config.website.enabled {
+        tokio::spawn(async move {
+            if let Err(e) = WebsiteService::run(config.clone()).await {
+                tracing::error!("Website server error: {}", e);
+            }
+        });
+    }
 }
 
 fn main() {

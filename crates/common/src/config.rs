@@ -7,6 +7,7 @@ use std::{collections::HashSet, fs::File};
 
 #[derive(Serialize, Deserialize, Clone, Default)]
 pub struct RelayConfig {
+    pub website: WebsiteConfig,
     pub postgres: PostgresConfig,
     pub redis: RedisConfig,
     #[serde(default)]
@@ -25,6 +26,20 @@ pub struct RelayConfig {
     pub router_config: RouterConfig,
     #[serde(default = "default_duration")]
     pub target_get_payload_propagation_duration_ms: u64,
+}
+
+#[derive(Serialize, Deserialize, Clone, Default)]
+pub struct WebsiteConfig {
+    pub enabled: bool,
+    pub port: u16,
+    pub listen_address: String,
+    pub show_config_details: bool,
+    pub network_name: String,
+    pub relay_url: String,
+    pub relay_pubkey: String,
+    pub link_beaconchain: String,
+    pub link_etherscan: String,
+    pub link_data_api: String,
 }
 
 impl RelayConfig {
@@ -259,6 +274,7 @@ impl Route {
             Route::ProposerApi => panic!("ProposerApi is not a real route"),
             Route::DataApi => panic!("DataApi is not a real route"),
             Route::ConstraintsApi => panic!("ConstraintsApi is not a real route"),
+
         }
     }
     
