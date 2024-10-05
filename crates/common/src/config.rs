@@ -12,6 +12,7 @@ use ethereum_consensus::deneb::BlsPublicKey;
 
 #[derive(Serialize, Deserialize, Clone, Default)]
 pub struct RelayConfig {
+    #[serde(default)]
     pub website: WebsiteConfig,
     pub postgres: PostgresConfig,
     pub redis: RedisConfig,
@@ -28,6 +29,7 @@ pub struct RelayConfig {
     pub logging: LoggingConfig,
     #[serde(default)]
     pub validator_preferences: ValidatorPreferences,
+    #[serde(default)]
     pub router_config: RouterConfig,
     #[serde(default = "default_duration")]
     pub target_get_payload_propagation_duration_ms: u64,
@@ -42,18 +44,45 @@ pub struct RelayConfig {
     pub discord_webhook_url: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Default)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct WebsiteConfig {
+    #[serde(default)]
     pub enabled: bool,
+    #[serde(default)]
     pub port: u16,
+    #[serde(default)]
     pub listen_address: String,
+    #[serde(default)]
     pub show_config_details: bool,
+    #[serde(default)]
     pub network_name: String,
+    #[serde(default)]
     pub relay_url: String,
+    #[serde(default)]
     pub relay_pubkey: String,
+    #[serde(default)]
     pub link_beaconchain: String,
+    #[serde(default)]
     pub link_etherscan: String,
+    #[serde(default)]
     pub link_data_api: String,
+}
+
+impl Default for WebsiteConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            port: 8080,
+            listen_address: "127.0.0.1".to_string(),
+            show_config_details: false,
+            network_name: String::new(),
+            relay_url: String::new(),
+            relay_pubkey: String::new(),
+            link_beaconchain: String::new(),
+            link_etherscan: String::new(),
+            link_data_api: String::new(),
+        }
+    }
 }
 
 impl RelayConfig {
@@ -160,6 +189,7 @@ pub struct StartConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct RouterConfig {
+    #[serde(default)]
     pub enabled_routes: Vec<RouteInfo>,
 }
 

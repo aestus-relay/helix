@@ -1,7 +1,6 @@
 use serde::{Serialize, Deserialize};
 use deadpool_postgres::tokio_postgres::Row;
 use deadpool_postgres::tokio_postgres::Error;
-use helix_database::types::documents::DeliveredPayloadDocument;
 use helix_common::bellatrix::ByteVector;
 use ethereum_consensus::primitives::{U256, BlsPublicKey};
 
@@ -10,7 +9,7 @@ pub struct NumRegisteredValidators {
     pub num_validators: i64,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DeliveredPayload {
     pub slot: i32,
     pub epoch: i32,
