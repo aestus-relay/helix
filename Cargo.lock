@@ -2630,6 +2630,7 @@ dependencies = [
 name = "helix-cmd"
 version = "0.0.1"
 dependencies = [
+ "futures",
  "helix-api",
  "helix-common",
  "helix-website",
@@ -2762,16 +2763,20 @@ dependencies = [
  "axum 0.7.4",
  "deadpool-postgres",
  "ethereum-consensus",
+ "helix-beacon-client",
  "helix-common",
  "helix-database",
+ "helix-housekeeper",
  "helix-utils",
  "hex",
  "num-format",
+ "reqwest",
  "scaler",
  "serde",
  "serde_json",
  "tokio",
  "tracing",
+ "url",
 ]
 
 [[package]]

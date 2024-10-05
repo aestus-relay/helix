@@ -1,4 +1,4 @@
-FROM rust:1.74.0 AS helix
+FROM --platform=linux/amd64 rust:1.77.0 AS helix
 
 RUN apt update -y
 RUN apt install -y clang
@@ -28,7 +28,7 @@ RUN --mount=type=cache,target=/root/.cargo \
 
 
 # our final base
-FROM debian:stable-slim
+FROM --platform=linux/amd64 debian:stable-slim
 
 RUN mkdir /root/logs
 

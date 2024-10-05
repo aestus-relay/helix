@@ -5,23 +5,23 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width">
 
-    <title>Aestus MEV-Boost Relay - {{ network }}</title>
-    <meta name="description" content="Aestus Helix Relay enables Ethereum proof-of-stake validators access to blocks with maximal extractable value">
+    <title>Flashbots MEV-Boost Relay - {{ .Network | caseIt }}</title>
+    <meta name="description" content="Flashbots MEV-Boost Relay enables Ethereum proof-of-stake validators access to blocks with maximal extractable value">
 
-    <link data-react-helmet=true rel="shortcut icon" href=https://aestus.live/favicon.ico>
+    <link data-react-helmet="true" rel="shortcut icon" href="https://writings.flashbots.net/img/favicon.ico">
 
-    <meta property="og:title" content="Aestus Helix MEV-Boost Relay" />
-    <meta property="og:description" content="Aestus Helix  MEV-Boost Relay enables Ethereum proof-of-stake validators access to blocks with maximal extractable value" />
-    <meta property="og:type" content="website"/>
-    <meta property="og:site_name" content="Aestus Helix MEV-Boost Relay" />
-    <meta property="og:image" content="https://aestus.live/logo-black-text.png" />
-    <meta property="og:image:url" content="https://aestus.live/logo-black-text.png" />
-    <meta property="og:image:alt" content="Aestus logo" />
+    <meta property="og:title" content="Flashbots MEV-Boost Relay" />
+    <meta property="og:description" content="Flashbots MEV-Boost Relay enables Ethereum proof-of-stake validators access to blocks with maximal extractable value" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Flashbots MEV-Boost Relay" />
+    <meta property="og:image" content="https://d33wubrfki0l68.cloudfront.net/ae8530415158fbbbbe17fb033855452f792606c7/fe19f/img/logo.png" />
+    <meta property="og:image:url" content="https://d33wubrfki0l68.cloudfront.net/ae8530415158fbbbbe17fb033855452f792606c7/fe19f/img/logo.png" />
+    <meta property="og:image:alt" content="Flashbots logo" />
 
     <meta name="twitter:card" content="summary" />
-    <meta name="twitter:title" content="Aestus Helix MEV-Boost Relay" />
-    <meta property="twitter:description" content="Aestys MEV-Boost Relay enables Ethereum proof-of-stake validators access to blocks with maximal extractable value" />
-    <meta property="twitter:image" content="https://aestus.live/logo-black-text.png" />
+    <meta name="twitter:title" content="Flashbots MEV-Boost Relay" />
+    <meta property="twitter:description" content="Flashbots MEV-Boost Relay enables Ethereum proof-of-stake validators access to blocks with maximal extractable value" />
+    <meta property="twitter:image" content="https://d33wubrfki0l68.cloudfront.net/ae8530415158fbbbbe17fb033855452f792606c7/fe19f/img/logo.png" />
 
     <link rel="stylesheet" href="https://unpkg.com/purecss@2.1.0/build/pure-min.css" integrity="sha384-yHIFVG6ClnONEA5yB5DJXfW2/KC173DIQrYoZMEtBvGzmf0PKiGyNEqe9N6BNDBH" crossorigin="anonymous">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/purecss@2.1.0/build/grids-responsive-min.css" />
@@ -146,36 +146,36 @@
 <div class="grids">
     <div class="content">
 
-        <a href="https://aestus.live">
-            <img style="float:right; background:white; margin-left: 64px;" src="https://aestus.live/logo-black-notext.png">
+        <a href="https://collective.flashbots.net/">
+            <img style="float:right; background:white; margin-left: 64px;" src="https://d33wubrfki0l68.cloudfront.net/ae8530415158fbbbbe17fb033855452f792606c7/fe19f/img/logo.png" />
         </a>
 
         <h1>
-            Aestus Helix Relay - {{ network }}
+            Flashbots Boost Relay - {{ .Network | caseIt }}
         </h1>
 
-        {% if relay_url != "" %}
+        {{if .RelayURL}}
         <div class="relay-url-container">
-            <pre id="relay-url">{{ relay_url }}</pre>
+            <pre id="relay-url">{{ .RelayURL }}</pre>
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 copy-icon" onclick="copyRelayURLToClipboard()">
                 <title>Copy Relay URL to clipboard</title>
                 <path stroke-linecap=" round" stroke-linejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 01-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 011.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 00-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 01-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 00-3.375-3.375h-1.5a1.125 1.125 0 01-1.125-1.125v-1.5a3.375 3.375 0 00-3.375-3.375H9.75"></path>
             </svg>
         </div>
-        {% endif %}
+        {{end}}
 
-        {% if show_config_details %}
+        {{if .ShowConfigDetails}}
         <p>Configuration:</p>
         <ul>
-            <li>Relay Pubkey: <tt>{{ relay_pubkey }}</tt></li>
-            <li>Capella fork version: <tt>{{ capella_fork_version }}</tt></li>
-            <li>Bellatrix fork version: <tt>{{ bellatrix_fork_version }}</tt></li>
-            <li>Genesis fork version: <tt>{{ genesis_fork_version }}</tt></li>
-            <li>Genesis validators root: <tt>{{ genesis_validators_root }}</tt></li>
-            <li>Builder signing domain: <tt>{{ builder_signing_domain }}</tt></li>
-            <!-- <li>Beacon proposer signing domain: <tt>beacon_proposer_signing_domain </tt></li> -->
+            <li>Relay Pubkey: <tt>{{ .RelayPubkey }}</tt></li>
+            <li>Capella fork version: <tt>{{ .CapellaForkVersion }}</tt></li>
+            <li>Bellatrix fork version: <tt>{{ .BellatrixForkVersion }}</tt></li>
+            <li>Genesis fork version: <tt>{{ .GenesisForkVersion }}</tt></li>
+            <li>Genesis validators root: <tt>{{ .GenesisValidatorsRoot }}</tt></li>
+            <li>Builder signing domain: <tt>{{ .BuilderSigningDomain }}</tt></li>
+            <li>Beacon proposer signing domain: <tt>{{ .BeaconProposerSigningDomain }}</tt></li>
         </ul>
-        {% endif %}
+        {{end}}
 
         <br>
         <br>
@@ -193,15 +193,15 @@
                     <tbody>
                     <tr title="Currently active or pending validators on Ethereum PoS">
                         <td>Validators active or in queue</td>
-                        <td>{{ network_validators }}</td>
+                        <td>{{ .ValidatorsTotal | prettyInt }}</td>
                     </tr>
                     <tr title="Validators who have sent a registration at least once">
-                        <td> Registered Validators (all time)</td>
-                        <td>{{ registered_validators }}</td>
+                        <td>Validators registered (all time)</td>
+                        <td>{{ .ValidatorsRegistered| prettyInt }}</td>
                     </tr>
                     <tr title="Last slot delivered through this relay">
                         <td>Latest slot</td>
-                        <td>{{ latest_slot|pretty_int }}</td>
+                        <td>{{ .HeadSlot| prettyInt }}</td>
                     </tr>
                     </tbody>
                 </table>
@@ -210,12 +210,10 @@
             <div class="pure-u-1 pure-u-md-1-3 links">
                 <h2>Links</h2>
                 <ul>
-                    <li><a href="https://www.aestus.live/">Homepage</a></li>
-                    <li><a href="https://mevboost.pics/">MEVBoost.pics by Toni W</a></li>
-                    <li><a href="https://github.com/gattaca-com/helix">Gattaca Helix on Github</a></li>
-                    <li><a href="https://github.com/aestus-relay/">Aestus Relay on Github</a></li>
-                    <li><a href="https://github.com/flashbots/relay-specs">Flashbots Relay Specs</a></li>
-                    <li><a href="https://github.com/flashbots/builder">Builder Specs</a>
+                    <li><a href="https://github.com/flashbots/mev-boost">flashbots/mev-boost</a></li>
+                    <li><a href="https://github.com/flashbots/mev-boost-relay">flashbots/mev-boost-relay</a></li>
+                    <li><a href="https://github.com/flashbots/builder">flashbots/builder</a>
+                    <li><a href="https://github.com/flashbots/relay-specs">Relay API documentation</a></li>
                 </ul>
 
             </div>
@@ -239,9 +237,9 @@
                 <th>Slot</th>
                 <th>Block number</th>
                 <th>
-                    Value (ETH{{ value_order_icon|safe }})
+                    Value (ETH{{.ValueOrderIcon}})
 
-                    <a href="{{ value_link }}">
+                    <a href="{{.ValueLink}}">
                         <svg id="icon-sort-default" style="float:right; width:16px;" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M3 7.5L7.5 3m0 0L12 7.5M7.5 3v13.5m13.5 0L16.5 21m0 0L12 16.5m4.5 4.5V7.5" />
                         </svg>
@@ -254,41 +252,44 @@
             </tr>
             </thead>
             <tbody>
-            {% for payload in recent_payloads %}
+            {{$linkBeaconchain := .LinkBeaconchain}}
+            {{$linkEtherscan := .LinkEtherscan}}
+            {{$linkDataAPI := .LinkDataAPI}}
+            {{ range .Payloads }}
             <tr>
-                <td>{{ payload.epoch|pretty_int }}</td>
+                <td>{{.Epoch | prettyInt}}</td>
                 <td>
-                    <a href="{{ link_data_api }}/relay/v1/data/bidtraces/proposer_payload_delivered?slot={{ payload.slot }}">{{ payload.slot|pretty_int }}</a>
+                    <a href="{{$linkDataAPI}}/relay/v1/data/bidtraces/proposer_payload_delivered?slot={{.Slot}}">{{.Slot | prettyInt}}</a>
                 </td>
-                <td>{{ payload.block|pretty_int }}</td>
-                <td>{{ payload.value|wei_to_eth }}</td>
-                <td>{{ payload.num_txs }}</td>
+                <td>{{.BlockNumber | prettyInt}}</td>
+                <td>{{.Value | weiToEth}}</td>
+                <td>{{.NumTx }}</td>
                 <td>
-                    <div title="Blob Gas Used: "></div>
+                    <div title="Blob Gas Used: {{.BlobGasUsed}}">{{.NumBlobs }}</div>
                 </td>
-                <td>{{ payload.block_hash }}</td>
+                <td>{{.BlockHash}}</td>
                 <td>
                     <div class="icons-container">
-                        {% if link_beaconchain != "" %}
-                        <a class="img-beaconchain" href="{{ link_beaconchain }}/slot/{{ payload.slot }}" target="_blank" alt="View slot in beaconcha.in" title="View slot in beaconcha.in"></a>
+                        {{ if ne $linkBeaconchain "" }}
+                        <a class="img-beaconchain" href="{{$linkBeaconchain}}/slot/{{.Slot}}" target="_blank" alt="View slot in beaconcha.in" title="View slot in beaconcha.in"></a>
                         &nbsp;
-                        {% endif %}
-                        {% if link_etherscan != "" %}
-                        <a class="img-etherscan" href="{{ link_etherscan }}/block/{{ payload.block }}" target="_blank" alt="View block on Etherscan" title="View block on Etherscan" /></a>
-                        {% endif %}
+                        {{ end }}
+                        {{ if ne $linkEtherscan "" }}
+                        <a class="img-etherscan" href="{{$linkEtherscan}}/block/{{.BlockNumber}}" target="_blank" alt="View block on Etherscan" title="View block on Etherscan" /></a>
+                        {{ end }}
                     </div>
                 </td>
             </tr>
-            {% endfor %}
+            {{ end }}
             </tbody>
         </table>
         </p>
 
         <center>
-            <p>{{ num_delivered_payloads|pretty_int }} payloads delivered</p>
+            <p>{{.NumPayloadsDelivered | prettyInt}} payloads delivered</p>
             <p>
                 <small>
-                    <a href="{{ link_data_api }}/relay/v1/data/bidtraces/proposer_payload_delivered?limit=10">Data API</a> &middot; <a href="https://flashbots-boost-relay-public.s3.us-east-2.amazonaws.com/index.html">Bulk Data</a> &middot; <a href="https://flashbots.notion.site/Relay-API-Spec-5fb0819366954962bc02e81cb33840f5#417abe417dde45caaff3dc15aaae65dd">Docs</a>
+                    <a href="{{.LinkDataAPI}}/relay/v1/data/bidtraces/proposer_payload_delivered?limit=10">Data API</a> &middot; <a href="https://flashbots-boost-relay-public.s3.us-east-2.amazonaws.com/index.html">Bulk Data</a> &middot; <a href="https://flashbots.notion.site/Relay-API-Spec-5fb0819366954962bc02e81cb33840f5#417abe417dde45caaff3dc15aaae65dd">Docs</a>
                 </small>
             </p>
         </center>
