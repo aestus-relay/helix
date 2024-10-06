@@ -3,6 +3,6 @@ pub mod handlers;
 pub mod templates;
 pub mod models;
 pub mod state;
-mod database_queries;
+mod postgres_db_website;
 
 pub use website_service::WebsiteService;

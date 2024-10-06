@@ -4,7 +4,6 @@ use std::sync::{Arc, RwLock};
 use axum::{Router, routing::get};
 use tokio::net::TcpListener;
 use tracing::{info, error, debug, warn};
-use tokio::time::{interval, Duration};
 use tokio::sync::{broadcast, mpsc};
 
 use helix_common::{RelayConfig, NetworkConfig};
@@ -12,9 +11,9 @@ use helix_database::postgres::postgres_db_service::PostgresDatabaseService;
 use helix_common::chain_info::ChainInfo;
 use helix_utils::signing::compute_builder_domain;
 use helix_housekeeper::{ChainEventUpdater, ChainUpdate};
-use helix_beacon_client::{beacon_client::BeaconClient, BeaconClientTrait, multi_beacon_client::MultiBeaconClient, MultiBeaconClientTrait};
+use helix_beacon_client::{beacon_client::BeaconClient, multi_beacon_client::MultiBeaconClient, MultiBeaconClientTrait};
 use crate::handlers;
-use crate::database_queries::WebsiteDatabaseService;
+use crate::postgres_db_website::WebsiteDatabaseService;
 use crate::models::DeliveredPayload;
 use crate::templates::IndexTemplate;
 use hex::encode as hex_encode;
@@ -134,7 +133,7 @@ impl WebsiteService {
 
 
         // Start the background task to update templates
-        let update_state = state.clone();
+        /* let update_state = state.clone();
         tokio::spawn(async move {
             info!("Starting background task to update templates");
             let mut interval = interval(Duration::from_secs(10));
@@ -145,7 +144,7 @@ impl WebsiteService {
                     error!("Error updating templates: {:?}", e);
                 }
             }
-        });
+        });*/
 
         let app = Router::new()
             .route("/", get(handlers::index))
@@ -203,10 +202,10 @@ impl WebsiteService {
 
         // Sort payloads for different views
         let mut payloads_by_value_desc = recent_payloads.clone();
-        payloads_by_value_desc.sort_by(|a, b| b.value.cmp(&a.value));
+        payloads_by_value_desc.sort_by(|a, b| b.bid_trace.value.cmp(&a.bid_trace.value));
 
         let mut payloads_by_value_asc = recent_payloads.clone();
-        payloads_by_value_asc.sort_by(|a, b| a.value.cmp(&b.value));
+        payloads_by_value_asc.sort_by(|a, b| a.bid_trace.value.cmp(&b.bid_trace.value));
 
         // Generate templates for different sorting orders
         let default_template = Self::generate_template(state, &recent_payloads, "", num_network_validators, num_registered_validators, num_delivered_payloads)?;
@@ -219,7 +218,7 @@ impl WebsiteService {
         cached_templates.by_value_desc = by_value_desc_template;
         cached_templates.by_value_asc = by_value_asc_template;
 
-        info!("Templates updated successfully");
+        info!("Templates updated");
         Ok(())
     }
 
