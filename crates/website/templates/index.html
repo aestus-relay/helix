@@ -147,7 +147,7 @@
     <div class="content">
 
         <a href="https://aestus.live">
-            <img style="float:right; background:white; margin-left: 64px;" src="https://aestus.live/logo-black-notext.png">
+            <img style="float:right; background:white; margin-left: 64px; width: 140px;" src="https://aestus.live/logo-black-notext.png">
         </a>
 
         <h1>
@@ -159,7 +159,7 @@
             <pre id="relay-url">{{ relay_url }}</pre>
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 copy-icon" onclick="copyRelayURLToClipboard()">
                 <title>Copy Relay URL to clipboard</title>
-                <path stroke-linecap=" round" stroke-linejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 01-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 011.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 00-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 01-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 00-3.375-3.375h-1.5a1.125 1.125 0 01-1.125-1.125v-1.5a3.375 3.375 0 00-3.375-3.375H9.75"></path>
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 01-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 011.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 00-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 01-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 00-3.375-3.375h-1.5a1.125 1.125 0 01-1.125-1.125v-1.5a3.375 3.375 0 00-3.375-3.375H9.75"></path>
             </svg>
         </div>
         {% endif %}
@@ -256,25 +256,25 @@
             <tbody>
             {% for payload in recent_payloads %}
             <tr>
-                <td>{{ payload.epoch|pretty_int }}</td>
+                <td>{{ payload.epoch|pretty_int}}</td>
                 <td>
-                    <a href="{{ link_data_api }}/relay/v1/data/bidtraces/proposer_payload_delivered?slot={{ payload.slot }}">{{ payload.slot|pretty_int }}</a>
+                    <a href="{{ link_data_api }}/relay/v1/data/bidtraces/proposer_payload_delivered?slot={{ payload.bid_trace.slot  }}">{{ payload.bid_trace.slot|pretty_int }}</a>
                 </td>
-                <td>{{ payload.block|pretty_int }}</td>
-                <td>{{ payload.value|wei_to_eth }}</td>
+                <td>{{ payload.block_number|pretty_int }}</td>
+                <td>{{ payload.bid_trace.value|wei_to_eth }}</td>
                 <td>{{ payload.num_txs }}</td>
                 <td>
-                    <div title="Blob Gas Used: "></div>
+                    <div title="Blob Gas Used: {{ payload.blob_gas_used }}">{{ payload.num_blobs }}</div>
                 </td>
-                <td>{{ payload.block_hash }}</td>
+                <td>{{ payload.bid_trace.block_hash }}</td>
                 <td>
                     <div class="icons-container">
                         {% if link_beaconchain != "" %}
-                        <a class="img-beaconchain" href="{{ link_beaconchain }}/slot/{{ payload.slot }}" target="_blank" alt="View slot in beaconcha.in" title="View slot in beaconcha.in"></a>
+                        <a class="img-beaconchain" href="{{ link_beaconchain }}/slot/{{ payload.bid_trace.slot }}" target="_blank" alt="View slot in beaconcha.in" title="View slot in beaconcha.in"></a>
                         &nbsp;
                         {% endif %}
                         {% if link_etherscan != "" %}
-                        <a class="img-etherscan" href="{{ link_etherscan }}/block/{{ payload.block }}" target="_blank" alt="View block on Etherscan" title="View block on Etherscan" /></a>
+                        <a class="img-etherscan" href="{{ link_etherscan }}/block/{{ payload.block_number }}" target="_blank" alt="View block on Etherscan" title="View block on Etherscan" /></a>
                         {% endif %}
                     </div>
                 </td>
@@ -288,7 +288,7 @@
             <p>{{ num_delivered_payloads|pretty_int }} payloads delivered</p>
             <p>
                 <small>
-                    <a href="{{ link_data_api }}/relay/v1/data/bidtraces/proposer_payload_delivered?limit=10">Data API</a> &middot; <a href="https://flashbots-boost-relay-public.s3.us-east-2.amazonaws.com/index.html">Bulk Data</a> &middot; <a href="https://flashbots.notion.site/Relay-API-Spec-5fb0819366954962bc02e81cb33840f5#417abe417dde45caaff3dc15aaae65dd">Docs</a>
+                    <a href="{{ link_data_api }}/relay/v1/data/bidtraces/proposer_payload_delivered?limit=10">Data API</a> &middot; <a href="https://flashbots-boost-relay-public.s3.us-east-2.amazonaws.com/index.html">Bulk Data</a>
                 </small>
             </p>
         </center>

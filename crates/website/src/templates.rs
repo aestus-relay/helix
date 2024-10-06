@@ -1,9 +1,7 @@
 use askama::Template;
 use crate::models::DeliveredPayload;
-// Remove unnecessary imports from the top scope
-// Remove `use scaler::Formatter;` and other imports here
 
-// Define the `filters` module without `use super::*;`
+//Askama filters
 pub mod filters {
     use num_format::{Locale, ToFormattedString};
     use alloy_primitives::utils::format_units;

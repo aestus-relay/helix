@@ -1,5 +1,3 @@
-// crates/website/src/handlers.rs
-
 use axum::{extract::State, response::Html, extract::Query};
 use std::collections::HashMap;
 use std::sync::Arc;
