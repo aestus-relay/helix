@@ -5,7 +5,6 @@ use helix_common::WebsiteConfig;
 use std::sync::RwLock;
 use crate::templates::IndexTemplate;
 use tokio::sync::watch;
-use tracing::{info, error, debug, warn};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -34,7 +33,6 @@ impl LatestSlotInfo {
 
     pub fn get_latest_slot(&self) -> u64 {
         let slot = *self.slot.borrow();
-        debug!("Getting latest slot: {}", slot);
         slot
     }
 }

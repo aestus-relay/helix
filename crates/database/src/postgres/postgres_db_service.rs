@@ -1057,9 +1057,9 @@ impl DatabaseService for PostgresDatabaseService {
         transaction.execute(
             "
                 INSERT INTO
-                    block_submission (block_number, slot_number, parent_hash, block_hash, builder_pubkey, proposer_pubkey, proposer_fee_recipient, gas_limit, gas_used, value, num_txs, timestamp, first_seen)
+                    block_submission (block_number, slot_number, parent_hash, block_hash, builder_pubkey, proposer_pubkey, proposer_fee_recipient, gas_limit, gas_used, value, num_txs, timestamp, first_seen, num_blobs, blob_gas_used, excess_blob_gas)
                 VALUES
-                    ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                    ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
                 ON CONFLICT (block_hash)
                 DO UPDATE SET
                     first_seen = LEAST(block_submission.first_seen, excluded.first_seen)
@@ -1078,6 +1078,9 @@ impl DatabaseService for PostgresDatabaseService {
                 &(submission.transactions().len() as i32),
                 &(submission.timestamp() as i64),
                 &(trace.receive as i64),
+                &(submission.num_blobs() as i32),
+                &(submission.blob_gas_used() as i32),
+                &(submission.excess_blob_gas() as i32),
             ],
         ).await?;
 
@@ -1321,7 +1324,10 @@ impl DatabaseService for PostgresDatabaseService {
                 block_submission.gas_limit              gas_limit,
                 block_submission.gas_used               gas_used,
                 block_submission.block_number           block_number,
-                block_submission.num_txs                num_txs
+                block_submission.num_txs                num_txs,
+                block_submission.num_blobs              num_blobs,
+                block_submission.blob_gas_used          blob_gas_used,
+                block_submission.excess_blob_gas        excess_blob_gas
             FROM 
                 delivered_payload 
             INNER JOIN
