@@ -1,26 +1,25 @@
-use crate::state::{AppState, CachedTemplates, LatestSlotInfo};
+use crate::state::{AppState, CachedTemplates};
+use axum::{routing::get, Router};
 use std::net::SocketAddr;
-use std::sync::{Arc, RwLock};
-use axum::{Router, routing::get};
+use std::sync::Arc;
 use tokio::net::TcpListener;
-use tracing::{info, error, debug, warn};
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, RwLock};
+use tracing::{debug, error, info, warn};
 
-use helix_common::{RelayConfig, NetworkConfig};
-use helix_database::postgres::postgres_db_service::PostgresDatabaseService;
-use helix_common::chain_info::ChainInfo;
-use helix_utils::signing::compute_builder_domain;
-use helix_housekeeper::{ChainEventUpdater, ChainUpdate};
-use helix_beacon_client::{beacon_client::BeaconClient, multi_beacon_client::MultiBeaconClient, MultiBeaconClientTrait};
 use crate::handlers;
-use crate::postgres_db_website::WebsiteDatabaseService;
 use crate::models::DeliveredPayload;
+use crate::postgres_db_website::WebsiteDatabaseService;
 use crate::templates::IndexTemplate;
+use helix_beacon_client::{beacon_client::BeaconClient, multi_beacon_client::MultiBeaconClient, MultiBeaconClientTrait};
+use helix_common::chain_info::ChainInfo;
+use helix_common::{NetworkConfig, RelayConfig};
+use helix_database::postgres::postgres_db_service::PostgresDatabaseService;
+use helix_housekeeper::{ChainEventUpdater, ChainUpdate};
+use helix_utils::signing::compute_builder_domain;
 use hex::encode as hex_encode;
 use url::Url;
 
 pub struct WebsiteService {}
-
 
 impl WebsiteService {
     pub async fn run(config: RelayConfig) -> Result<(), Box<dyn std::error::Error>> {
@@ -40,18 +39,13 @@ impl WebsiteService {
             NetworkConfig::Sepolia => ChainInfo::for_sepolia(),
             NetworkConfig::Holesky => ChainInfo::for_holesky(),
             NetworkConfig::Custom { ref dir_path, ref genesis_validator_root, genesis_time } => {
-                ChainInfo::for_custom(dir_path.clone(), genesis_validator_root.clone(), genesis_time)
-                    .expect("Failed to load custom chain info")
-            },
+                ChainInfo::for_custom(dir_path.clone(), genesis_validator_root.clone(), genesis_time).expect("Failed to load custom chain info")
+            }
         });
 
-        // LatestSlotInfo
-        let (latest_slot_info, latest_slot_sender) = LatestSlotInfo::new(0);
-        let latest_slot_info = Arc::new(latest_slot_info);
-        let latest_slot_sender = Arc::new(latest_slot_sender);
-
         // Start a MultiBeaconClient
-        let beacon_clients: Vec<Arc<BeaconClient>> = config.beacon_clients
+        let beacon_clients: Vec<Arc<BeaconClient>> = config
+            .beacon_clients
             .iter()
             .map(|bc_config| {
                 let client = reqwest::Client::new();
@@ -71,14 +65,11 @@ impl WebsiteService {
                 by_value_desc: IndexTemplate::default(),
                 by_value_asc: IndexTemplate::default(),
             })),
-            latest_slot_info: latest_slot_info.clone(),
+            latest_slot: Arc::new(RwLock::new(0)),
         });
 
         // Create the ChainEventUpdater and subscription
-        let (mut chain_updater, chain_update_subscription) = ChainEventUpdater::new(
-            db.clone(),
-            chain_info.clone(),
-        );
+        let (mut chain_updater, chain_update_subscription) = ChainEventUpdater::new(db.clone(), chain_info.clone());
         info!("ChainEventUpdater initialized");
 
         let (head_event_tx, head_event_rx) = broadcast::channel(100);
@@ -86,13 +77,14 @@ impl WebsiteService {
         let (payload_attributes_tx, payload_attributes_rx) = broadcast::channel(100);
         multi_beacon_client.subscribe_to_payload_attributes_events(payload_attributes_tx).await;
 
-        // Spawn the ChainEventUpdater task and create channel
+        // Spawn the ChainEventUpdater task
         tokio::spawn(async move {
             info!("Starting ChainEventUpdater");
             chain_updater.start(head_event_rx, payload_attributes_rx).await;
             error!("ChainEventUpdater unexpectedly stopped");
         });
 
+        // Subscription to ChainEventUpdater
         let (tx, mut rx) = mpsc::channel(100);
         if let Err(e) = chain_update_subscription.send(tx).await {
             error!("Failed to subscribe to chain updates: {:?}", e);
@@ -102,25 +94,23 @@ impl WebsiteService {
 
         // Spawn task to handle chain updates
         let update_state = state.clone();
-        let latest_slot_sender = Arc::clone(&latest_slot_sender);
         tokio::spawn(async move {
             info!("Starting chain update handler");
             while let Some(update) = rx.recv().await {
-                match update {
-                    ChainUpdate::SlotUpdate(slot_update) => {
-                        info!("Received slot update: {}", slot_update.slot);
-                        if let Err(_) = latest_slot_sender.send(slot_update.slot) {
-                            error!("Failed to update latest slot");
-                        } else {
-                            debug!("Updated latest slot to {}", slot_update.slot);
-                            // Update templates on new slot
-                            if let Err(e) = Self::update_templates(&update_state).await {
-                                error!("Error updating templates: {:?}", e);
-                            }
-                        }
+                if let ChainUpdate::SlotUpdate(slot_update) = update {
+                    info!("Received slot update: {}", slot_update.slot);
+
+                    // Update the latest slot using RwLock
+                    {
+                        let mut latest_slot = update_state.latest_slot.write().await;
+                        *latest_slot = slot_update.slot;
                     }
-                    _ => {
-                        debug!("Received non-slot update");
+
+                    debug!("Updated latest slot to {}", slot_update.slot);
+
+                    // Update templates on new slot
+                    if let Err(e) = Self::update_templates(&update_state).await {
+                        error!("Error updating templates: {:?}", e);
                     }
                 }
             }
@@ -128,9 +118,7 @@ impl WebsiteService {
         });
 
         // Start website service
-        let app = Router::new()
-            .route("/", get(handlers::index))
-            .with_state(state);
+        let app = Router::new().route("/", get(handlers::index)).with_state(state);
 
         let addr: String = format!("{}:{}", config.website.listen_address, config.website.port).parse()?;
         let addr: SocketAddr = addr.parse().expect("Invalid listen address");
@@ -190,12 +178,29 @@ impl WebsiteService {
         payloads_by_value_asc.sort_by(|a, b| a.bid_trace.value.cmp(&b.bid_trace.value));
 
         // Generate templates for different sorting orders
-        let default_template = Self::generate_template(state, &recent_payloads, "", num_network_validators, num_registered_validators, num_delivered_payloads)?;
-        let by_value_desc_template = Self::generate_template(state, &payloads_by_value_desc, "-value", num_network_validators, num_registered_validators, num_delivered_payloads)?;
-        let by_value_asc_template = Self::generate_template(state, &payloads_by_value_asc, "value", num_network_validators, num_registered_validators, num_delivered_payloads)?;
+        let default_template =
+            Self::generate_template(state, &recent_payloads, "", num_network_validators, num_registered_validators, num_delivered_payloads).await?;
+        let by_value_desc_template = Self::generate_template(
+            state,
+            &payloads_by_value_desc,
+            "-value",
+            num_network_validators,
+            num_registered_validators,
+            num_delivered_payloads,
+        )
+        .await?;
+        let by_value_asc_template = Self::generate_template(
+            state,
+            &payloads_by_value_asc,
+            "value",
+            num_network_validators,
+            num_registered_validators,
+            num_delivered_payloads,
+        )
+        .await?;
 
         // Update all cached templates
-        let mut cached_templates = state.cached_templates.write().unwrap();
+        let mut cached_templates = state.cached_templates.write().await;
         cached_templates.default = default_template;
         cached_templates.by_value_desc = by_value_desc_template;
         cached_templates.by_value_asc = by_value_asc_template;
@@ -204,15 +209,18 @@ impl WebsiteService {
         Ok(())
     }
 
-    fn generate_template(
+    async fn generate_template(
         state: &Arc<AppState>,
         recent_payloads: &[DeliveredPayload],
         order_by: &str,
         num_network_validators: i64,
         num_registered_validators: i64,
-        num_delivered_payloads: i64
+        num_delivered_payloads: i64,
     ) -> Result<IndexTemplate, Box<dyn std::error::Error>> {
-        let latest_slot = state.latest_slot_info.get_latest_slot();
+        let latest_slot = {
+            let latest_slot = state.latest_slot.read().await;
+            *latest_slot
+        };
 
         let (value_link, value_order_icon) = match order_by {
             "-value" => ("/?order_by=value", "▼"),
@@ -229,7 +237,7 @@ impl WebsiteService {
             registered_validators: num_registered_validators,
             latest_slot: latest_slot as i32,
             recent_payloads: recent_payloads.to_vec(),
-            num_delivered_payloads: num_delivered_payloads,
+            num_delivered_payloads,
             value_link: value_link.to_string(),
             value_order_icon: value_order_icon.to_string(),
             link_beaconchain: state.website_config.link_beaconchain.clone(),
@@ -241,11 +249,7 @@ impl WebsiteService {
             genesis_validators_root: hex_encode(state.chain_info.genesis_validators_root.as_ref() as &[u8]),
             builder_signing_domain: compute_builder_domain(&state.chain_info.context)
                 .map(hex_encode)
-                .unwrap_or_else(|_e| {
-                    String::from("Error computing builder domain")
-                }),
+                .unwrap_or_else(|_e| String::from("Error computing builder domain")),
         })
     }
-
 }
-

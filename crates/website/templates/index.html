@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width">
 
-    <title>Aestus MEV-Boost Relay - {{ network }}</title>
+    <title>Aestus MEV-Boost Relay - {{ network|capitalize }}</title>
     <meta name="description" content="Aestus Helix Relay enables Ethereum proof-of-stake validators access to blocks with maximal extractable value">
 
     <link data-react-helmet=true rel="shortcut icon" href=https://aestus.live/favicon.ico>
@@ -151,7 +151,7 @@
         </a>
 
         <h1>
-            Aestus Helix Relay - {{ network }}
+            Aestus Helix Relay - {{ network|capitalize }}
         </h1>
 
         {% if relay_url != "" %}
