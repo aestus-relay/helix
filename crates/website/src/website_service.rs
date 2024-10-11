@@ -84,37 +84,13 @@ impl WebsiteService {
             error!("ChainEventUpdater unexpectedly stopped");
         });
 
-        // Subscription to ChainEventUpdater
-        let (tx, mut rx) = mpsc::channel(100);
-        if let Err(e) = chain_update_subscription.send(tx).await {
-            error!("Failed to subscribe to chain updates: {:?}", e);
-        } else {
-            info!("Subscribed to chain updates");
-        }
-
-        // Spawn task to handle chain updates
+        // Start handling chain updates
         let update_state = state.clone();
+        let chain_update_subscription = chain_update_subscription.clone();
         tokio::spawn(async move {
-            info!("Starting chain update handler");
-            while let Some(update) = rx.recv().await {
-                if let ChainUpdate::SlotUpdate(slot_update) = update {
-                    info!("Received slot update: {}", slot_update.slot);
-
-                    // Update the latest slot using RwLock
-                    {
-                        let mut latest_slot = update_state.latest_slot.write().await;
-                        *latest_slot = slot_update.slot;
-                    }
-
-                    debug!("Updated latest slot to {}", slot_update.slot);
-
-                    // Update templates on new slot
-                    if let Err(e) = Self::update_templates(&update_state).await {
-                        error!("Error updating templates: {:?}", e);
-                    }
-                }
+            if let Err(e) = Self::handle_chain_updates(update_state, chain_update_subscription).await {
+                error!("Error handling chain updates: {:?}", e);
             }
-            warn!("Chain update handler exited");
         });
 
         // Start website service
@@ -126,6 +102,43 @@ impl WebsiteService {
         info!("Website listening on {}", addr);
 
         axum::serve(listener, app).await.unwrap();
+
+        Ok(())
+    }
+
+    async fn handle_chain_updates(
+        state: Arc<AppState>,
+        chain_update_subscription: mpsc::Sender<mpsc::Sender<ChainUpdate>>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let (tx, mut rx) = mpsc::channel(20);
+        chain_update_subscription.send(tx).await?;
+
+        info!("Subscribed to chain updates");
+
+        while let Some(update) = rx.recv().await {
+            match update {
+                ChainUpdate::SlotUpdate(slot_update) => {
+                    info!("Received slot update: {}", slot_update.slot);
+
+                    // Update the latest slot using RwLock
+                    {
+                        let mut latest_slot = state.latest_slot.write().await;
+                        *latest_slot = slot_update.slot;
+                    }
+
+                    debug!("Updated latest slot to {}", slot_update.slot);
+
+                    // Update templates on new slot
+                    if let Err(e) = Self::update_templates(&state).await {
+                        error!("Error updating templates: {:?}", e);
+                    }
+                }
+                ChainUpdate::PayloadAttributesUpdate(_) => {
+                    // Not needed
+                }
+            }
+        }
+        warn!("Chain update handler exited");
 
         Ok(())
     }
