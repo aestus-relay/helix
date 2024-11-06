@@ -1388,12 +1388,36 @@ dependencies = [
 
 [[package]]
 name = "darling"
+version = "0.13.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a01d95850c592940db9b8194bc39f4bc0e89dee5c4265e4b1807c34a9aba453c"
+dependencies = [
+ "darling_core 0.13.4",
+ "darling_macro 0.13.4",
+]
+
+[[package]]
+name = "darling"
 version = "0.20.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0209d94da627ab5605dcccf08bb18afa5009cfbef48d8a8b7d7bdbc79be25c5e"
 dependencies = [
- "darling_core",
- "darling_macro",
+ "darling_core 0.20.3",
+ "darling_macro 0.20.3",
+]
+
+[[package]]
+name = "darling_core"
+version = "0.13.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "859d65a907b6852c9361e3185c862aae7fafd2887876799fa55f5f99dc40d610"
+dependencies = [
+ "fnv",
+ "ident_case",
+ "proc-macro2",
+ "quote",
+ "strsim",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -1412,11 +1436,22 @@ dependencies = [
 
 [[package]]
 name = "darling_macro"
+version = "0.13.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9c972679f83bdf9c42bd905396b6c3588a843a17f0f16dfcfa3e2c5d57441835"
+dependencies = [
+ "darling_core 0.13.4",
+ "quote",
+ "syn 1.0.109",
+]
+
+[[package]]
+name = "darling_macro"
 version = "0.20.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "836a9bbc7ad63342d6d6e7b815ccab164bc77a2d95d84bc3117a8c0d5c98e2d5"
 dependencies = [
- "darling_core",
+ "darling_core 0.20.3",
  "quote",
  "syn 2.0.77",
 ]
@@ -1883,7 +1918,7 @@ dependencies = [
  "serde_json",
  "serde_yaml 0.8.26",
  "sha2 0.10.8",
- "ssz_rs",
+ "ssz_rs 0.9.0 (git+https://github.com/ralexstokes/ssz-rs?rev=db3bca54b23522df224b1d7d4ac3c3b805a49e84)",
  "thiserror",
  "tokio",
  "tokio-stream",
@@ -2670,12 +2705,14 @@ dependencies = [
  "rand 0.8.5",
  "redis",
  "reqwest",
+ "reqwest-eventsource",
  "reth-primitives 0.1.0-alpha.10",
  "serde",
  "serde_json",
  "serial_test",
  "thiserror",
  "tokio",
+ "tokio-stream",
  "tokio-tungstenite 0.16.1",
  "tonic",
  "tonic-build",
@@ -2748,11 +2785,15 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml 0.9.25",
+ "sha2 0.10.8",
+ "ssz_rs 0.9.0 (git+https://github.com/ralexstokes/ssz-rs?rev=1df4cd9)",
  "ssz_types",
  "thiserror",
  "tokio",
  "tokio-postgres",
  "tracing",
+ "tree_hash 0.6.0",
+ "tree_hash_derive",
 ]
 
 [[package]]
@@ -2850,6 +2891,8 @@ dependencies = [
  "serde",
  "serde_json",
  "tracing",
+ "tree_hash 0.6.0",
+ "tree_hash_derive",
 ]
 
 [[package]]
@@ -5656,7 +5699,7 @@ version = "3.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "93634eb5f75a2323b16de4748022ac4297f9e76b6dced2be287a099f41b5e788"
 dependencies = [
- "darling",
+ "darling 0.20.3",
  "proc-macro2",
  "quote",
  "syn 2.0.77",
@@ -5753,6 +5796,7 @@ dependencies = [
  "cpufeatures",
  "digest 0.9.0",
  "opaque-debug",
+ "sha2-asm",
 ]
 
 [[package]]
@@ -5764,6 +5808,15 @@ dependencies = [
  "cfg-if 1.0.0",
  "cpufeatures",
  "digest 0.10.7",
+]
+
+[[package]]
+name = "sha2-asm"
+version = "0.6.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b845214d6175804686b2bd482bcffe96651bb2d1200742b712003504a2dac1ab"
+dependencies = [
+ "cc",
 ]
 
 [[package]]
@@ -5992,6 +6045,18 @@ dependencies = [
 [[package]]
 name = "ssz_rs"
 version = "0.9.0"
+source = "git+https://github.com/ralexstokes/ssz-rs?rev=1df4cd9#1df4cd9b849a48c44a6105abc3a38d21cd4fd8d3"
+dependencies = [
+ "alloy-primitives 0.7.4",
+ "bitvec",
+ "serde",
+ "sha2 0.9.9",
+ "ssz_rs_derive 0.9.0 (git+https://github.com/ralexstokes/ssz-rs?rev=1df4cd9)",
+]
+
+[[package]]
+name = "ssz_rs"
+version = "0.9.0"
 source = "git+https://github.com/ralexstokes/ssz-rs?rev=db3bca54b23522df224b1d7d4ac3c3b805a49e84#db3bca54b23522df224b1d7d4ac3c3b805a49e84"
 dependencies = [
  "alloy-primitives 0.4.2",
@@ -5999,7 +6064,17 @@ dependencies = [
  "hex",
  "serde",
  "sha2 0.9.9",
- "ssz_rs_derive",
+ "ssz_rs_derive 0.9.0 (git+https://github.com/ralexstokes/ssz-rs?rev=db3bca54b23522df224b1d7d4ac3c3b805a49e84)",
+]
+
+[[package]]
+name = "ssz_rs_derive"
+version = "0.9.0"
+source = "git+https://github.com/ralexstokes/ssz-rs?rev=1df4cd9#1df4cd9b849a48c44a6105abc3a38d21cd4fd8d3"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -6025,7 +6100,7 @@ dependencies = [
  "serde",
  "serde_derive",
  "smallvec 1.11.0",
- "tree_hash",
+ "tree_hash 0.5.2",
  "typenum",
 ]
 
@@ -6898,6 +6973,28 @@ dependencies = [
  "ethereum-types",
  "ethereum_hashing 1.0.0-beta.2",
  "smallvec 1.11.0",
+]
+
+[[package]]
+name = "tree_hash"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "134d6b24a5b829f30b5ee7de05ba7384557f5f6b00e29409cdf2392f93201bfa"
+dependencies = [
+ "ethereum-types",
+ "ethereum_hashing 0.6.0",
+ "smallvec 1.11.0",
+]
+
+[[package]]
+name = "tree_hash_derive"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9ce7bccc538359a213436af7bc95804bdbf1c2a21d80e22953cbe9e096837ff1"
+dependencies = [
+ "darling 0.13.4",
+ "quote",
+ "syn 1.0.109",
 ]
 
 [[package]]
