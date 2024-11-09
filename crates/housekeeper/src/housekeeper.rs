@@ -129,11 +129,6 @@ impl<DB: DatabaseService, BeaconClient: MultiBeaconClientTrait, A: Auctioneer> H
             return;
         }
 
-        // Skip processing if the GetPayload route is enabled.
-        if self.config.router_config.enabled_routes.iter().any(|r| r.route == Route::GetPayload) {
-            return;
-        }
-
         // Only allow one housekeeper task to run at a time.
         if !self.auctioneer.try_acquire_or_renew_leadership(&self.leader_id).await {
             return;
