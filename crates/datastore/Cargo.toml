@@ -29,8 +29,8 @@ hex.workspace = true
 ethereum-consensus.workspace = true
 
 # DB
-deadpool-redis.workspace = true
-redis.workspace = true
+deadpool-redis = { workspace = true, features = ["rt_tokio_1"] }
+redis = { workspace = true, features = ["aio", "tokio-comp"] }
 
 # Misc
 auto_impl.workspace = true

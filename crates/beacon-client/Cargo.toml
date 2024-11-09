@@ -15,10 +15,10 @@ axum.workspace = true
 async-trait.workspace = true
 futures = { workspace = true }
 http.workspace = true
-reqwest.workspace = true
-reqwest-eventsource = "0.5"
 tokio.workspace = true
 url.workspace = true
+reqwest.workspace = true
+reqwest-eventsource = "0.5"
 
 # Serialization and Data Format 
 serde.workspace = true
@@ -37,7 +37,6 @@ mockito.workspace = true
 
 # Misc
 auto_impl.workspace = true
-flate2 = "1.0"
 thiserror.workspace = true
 
 # Broadcasting
