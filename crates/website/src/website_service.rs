@@ -10,14 +10,15 @@ use crate::handlers;
 use crate::models::DeliveredPayload;
 use crate::postgres_db_website::WebsiteDatabaseService;
 use crate::templates::IndexTemplate;
-use helix_beacon_client::{beacon_client::BeaconClient, multi_beacon_client::MultiBeaconClient, MultiBeaconClientTrait};
+use helix_beacon_client::{
+    beacon_client::BeaconClient, multi_beacon_client::MultiBeaconClient, MultiBeaconClientTrait,
+};
 use helix_common::chain_info::ChainInfo;
 use helix_common::{NetworkConfig, RelayConfig};
 use helix_database::postgres::postgres_db_service::PostgresDatabaseService;
 use helix_housekeeper::{ChainEventUpdater, ChainUpdate};
 use helix_utils::signing::compute_builder_domain;
 use hex::encode as hex_encode;
-use url::Url;
 
 pub struct WebsiteService {}
 
@@ -39,7 +40,12 @@ impl WebsiteService {
             NetworkConfig::Sepolia => ChainInfo::for_sepolia(),
             NetworkConfig::Holesky => ChainInfo::for_holesky(),
             NetworkConfig::Custom { ref dir_path, ref genesis_validator_root, genesis_time } => {
-                ChainInfo::for_custom(dir_path.clone(), genesis_validator_root.clone(), genesis_time).expect("Failed to load custom chain info")
+                ChainInfo::for_custom(
+                    dir_path.clone(),
+                    genesis_validator_root.clone(),
+                    genesis_time,
+                )
+                .expect("Failed to load custom chain info")
             }
         });
 
@@ -47,11 +53,7 @@ impl WebsiteService {
         let beacon_clients: Vec<Arc<BeaconClient>> = config
             .beacon_clients
             .iter()
-            .map(|bc_config| {
-                let client = reqwest::Client::new();
-                let url = Url::parse(&bc_config.url).expect("Invalid beacon client URL");
-                Arc::new(BeaconClient::new(client, url))
-            })
+            .map(|bc_config| Arc::new(BeaconClient::from_config(bc_config.clone())))
             .collect();
         let multi_beacon_client = Arc::new(MultiBeaconClient::new(beacon_clients));
 
@@ -69,7 +71,8 @@ impl WebsiteService {
         });
 
         // Create the ChainEventUpdater and subscription
-        let (mut chain_updater, chain_update_subscription) = ChainEventUpdater::new(db.clone(), chain_info.clone());
+        let (mut chain_updater, chain_update_subscription) =
+            ChainEventUpdater::new(db.clone(), chain_info.clone());
         info!("ChainEventUpdater initialized");
 
         let (head_event_tx, head_event_rx) = broadcast::channel(100);
@@ -88,7 +91,9 @@ impl WebsiteService {
         let update_state = state.clone();
         let chain_update_subscription = chain_update_subscription.clone();
         tokio::spawn(async move {
-            if let Err(e) = Self::handle_chain_updates(update_state, chain_update_subscription).await {
+            if let Err(e) =
+                Self::handle_chain_updates(update_state, chain_update_subscription).await
+            {
                 error!("Error handling chain updates: {:?}", e);
             }
         });
@@ -96,7 +101,8 @@ impl WebsiteService {
         // Start website service
         let app = Router::new().route("/", get(handlers::index)).with_state(state);
 
-        let addr: String = format!("{}:{}", config.website.listen_address, config.website.port).parse()?;
+        let addr: String =
+            format!("{}:{}", config.website.listen_address, config.website.port).parse()?;
         let addr: SocketAddr = addr.parse().expect("Invalid listen address");
         let listener = TcpListener::bind(&addr).await.unwrap();
         info!("Website listening on {}", addr);
@@ -191,8 +197,15 @@ impl WebsiteService {
         payloads_by_value_asc.sort_by(|a, b| a.bid_trace.value.cmp(&b.bid_trace.value));
 
         // Generate templates for different sorting orders
-        let default_template =
-            Self::generate_template(state, &recent_payloads, "", num_network_validators, num_registered_validators, num_delivered_payloads).await?;
+        let default_template = Self::generate_template(
+            state,
+            &recent_payloads,
+            "",
+            num_network_validators,
+            num_registered_validators,
+            num_delivered_payloads,
+        )
+        .await?;
         let by_value_desc_template = Self::generate_template(
             state,
             &payloads_by_value_desc,
@@ -259,7 +272,9 @@ impl WebsiteService {
             capella_fork_version: hex_encode(state.chain_info.context.capella_fork_version),
             bellatrix_fork_version: hex_encode(state.chain_info.context.bellatrix_fork_version),
             genesis_fork_version: hex_encode(state.chain_info.context.genesis_fork_version),
-            genesis_validators_root: hex_encode(state.chain_info.genesis_validators_root.as_ref() as &[u8]),
+            genesis_validators_root: hex_encode(
+                state.chain_info.genesis_validators_root.as_ref() as &[u8]
+            ),
             builder_signing_domain: compute_builder_domain(&state.chain_info.context)
                 .map(hex_encode)
                 .unwrap_or_else(|_e| String::from("Error computing builder domain")),

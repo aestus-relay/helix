@@ -40,6 +40,11 @@ use crate::{
     DatabaseService,
 };
 
+use rustls::RootCertStore;
+use rustls_pki_types::pem::PemObject;
+use rustls_pki_types::CertificateDer;
+use tracing::log::debug;
+
 struct RegistrationParams<'a> {
     fee_recipient: &'a [u8],
     gas_limit: i32,
@@ -103,8 +108,15 @@ impl PostgresDatabaseService {
             None => None,
         };
         cfg.manager = Some(ManagerConfig { recycling_method: RecyclingMethod::Fast });
-        let rustls_config = rustls::ClientConfig::builder().with_root_certificates(root_certs()).with_no_client_auth();
+
+        let rustls_config = rustls::ClientConfig::builder()
+            .with_root_certificates(Arc::new(root_certs(
+                relay_config.postgres.cert_file_pem.as_deref(),
+            )?))
+            .with_no_client_auth();
+
         let tls = tokio_postgres_rustls::MakeRustlsConnect::new(rustls_config);
+
         let pool = match cfg.ssl_mode {
             Some(SslMode::Prefer) | Some(SslMode::Require) => cfg.create_pool(None, tls)?,
             _ => cfg.create_pool(None, NoTls)?,
@@ -351,7 +363,7 @@ impl PostgresDatabaseService {
 
             if structured_params_for_trusted.is_empty() {
                 transaction.commit().await?;
-                continue
+                continue;
             }
 
             let params: Vec<&(dyn ToSql + Sync)> = structured_params_for_trusted
@@ -419,7 +431,7 @@ impl DatabaseService for PostgresDatabaseService {
 
         if let Some(entry) = self.validator_registration_cache.get(&registration.public_key) {
             if entry.registration_info.registration.message.timestamp >= registration.timestamp {
-                return Ok(())
+                return Ok(());
             }
         }
 
@@ -497,10 +509,10 @@ impl DatabaseService for PostgresDatabaseService {
             if let Some(existing_entry) =
                 self.validator_registration_cache.get(&entry.registration.message.public_key)
             {
-                if existing_entry.registration_info.registration.message.timestamp >=
-                    entry.registration.message.timestamp
+                if existing_entry.registration_info.registration.message.timestamp
+                    >= entry.registration.message.timestamp
                 {
-                    return false
+                    return false;
                 }
             }
             true
@@ -544,10 +556,10 @@ impl DatabaseService for PostgresDatabaseService {
         if let Some(existing_entry) =
             self.validator_registration_cache.get(&registration.message.public_key)
         {
-            if existing_entry.registration_info.registration.message.timestamp >=
-                registration.message.timestamp
+            if existing_entry.registration_info.registration.message.timestamp
+                >= registration.message.timestamp
             {
-                return Ok(false)
+                return Ok(false);
             }
         }
         Ok(true)
@@ -846,7 +858,7 @@ impl DatabaseService for PostgresDatabaseService {
         }
 
         if self.validator_pool_cache.contains_key(api_key) {
-            return Ok(self.validator_pool_cache.get(api_key).map(|f| f.clone()))
+            return Ok(self.validator_pool_cache.get(api_key).map(|f| f.clone()));
         }
 
         let api_key = api_key.to_string();
@@ -857,12 +869,12 @@ impl DatabaseService for PostgresDatabaseService {
             Ok(rows) => rows,
             Err(e) => {
                 error!("Error querying validator_pools: {}", e);
-                return Err(DatabaseError::from(e))
+                return Err(DatabaseError::from(e));
             }
         };
 
         if rows.is_empty() {
-            return Ok(None)
+            return Ok(None);
         }
 
         let name: String = rows[0].get("name");
@@ -1009,8 +1021,8 @@ impl DatabaseService for PostgresDatabaseService {
             transaction.execute(&sql, &params[..]).await?;
         }
 
-        if payload.execution_payload.withdrawals().is_some() &&
-            !payload.execution_payload.withdrawals().unwrap().is_empty()
+        if payload.execution_payload.withdrawals().is_some()
+            && !payload.execution_payload.withdrawals().unwrap().is_empty()
         {
             // Save the withdrawals
             let mut structured_params: Vec<(i32, &[u8], i32, &[u8], i64)> = Vec::new();
@@ -1694,10 +1706,21 @@ impl DatabaseService for PostgresDatabaseService {
     }
 }
 
-fn root_certs() -> rustls::RootCertStore {
+fn root_certs(cert_file_pem: Option<&str>) -> Result<RootCertStore, Box<dyn std::error::Error>> {
     let mut roots = rustls::RootCertStore::empty();
+
+    // Load platform certificates (optional, but recommended)
     for cert in rustls_native_certs::load_native_certs().expect("could not load platform certs") {
-        roots.add(cert).unwrap();
+        roots.add(cert)?;
     }
-    roots
+
+    // Load a self-signed cert
+    if let Some(cert_file_pem) = cert_file_pem {
+        debug!("found custom cert");
+        let cert_der_pem = CertificateDer::from_pem_file(cert_file_pem)?;
+        roots.add(cert_der_pem)?
+    }
+
+    debug!("total certs in store: {}", roots.len());
+    Ok(roots)
 }
