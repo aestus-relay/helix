@@ -28,8 +28,8 @@ impl WebsiteService {
 
         // Initialize PostgresDB
         let postgres_db = PostgresDatabaseService::from_relay_config(&config).unwrap();
-        //postgres_db.run_migrations().await;
-        //postgres_db.init_region(&config).await;
+        postgres_db.run_migrations().await;
+        postgres_db.init_region(&config).await;
         let db = Arc::new(postgres_db);
         debug!("PostgresDB initialized");
 
