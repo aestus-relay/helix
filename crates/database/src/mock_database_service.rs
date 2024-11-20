@@ -144,6 +144,14 @@ impl DatabaseService for MockDatabaseService {
         Ok(())
     }
 
+    async fn save_delivered_constraints(
+        &self,
+        _slot: u64,
+        _num_constraints: usize,
+    ) -> Result<(), DatabaseError> {
+        Ok(())
+    }
+
     async fn store_block_submission(
         &self,
         _submission: Arc<SignedBidSubmission>,

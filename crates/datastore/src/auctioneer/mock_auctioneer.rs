@@ -90,6 +90,10 @@ impl Auctioneer for MockAuctioneer {
         }
     }
 
+    async fn get_constraints_count(&self, _slot: u64) -> Result<usize, AuctioneerError> {
+        Ok(0)
+    }
+
     async fn save_inclusion_proof(
         &self,
         _slot: u64,
@@ -128,7 +132,7 @@ impl Auctioneer for MockAuctioneer {
         // check if the value is 9999 and than return an error for testing
         if let Some(bid) = self.best_bid.lock().unwrap().clone() {
             if bid.value() == U256::from(9999) {
-                return Err(AuctioneerError::UnexpectedValueType)
+                return Err(AuctioneerError::UnexpectedValueType);
             }
         }
         Ok(self.best_bid.lock().unwrap().clone())

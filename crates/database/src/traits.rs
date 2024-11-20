@@ -150,6 +150,12 @@ pub trait DatabaseService: Send + Sync + Clone {
         validator_preferences: Arc<ValidatorPreferences>,
     ) -> Result<Vec<DeliveredPayloadDocument>, DatabaseError>;
 
+    async fn save_delivered_constraints(
+        &self,
+        slot: u64,
+        num_constraints: usize,
+    ) -> Result<(), DatabaseError>;
+
     async fn save_get_header_call(
         &self,
         slot: u64,

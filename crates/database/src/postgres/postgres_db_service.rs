@@ -1075,6 +1075,27 @@ impl DatabaseService for PostgresDatabaseService {
         Ok(())
     }
 
+    async fn save_delivered_constraints(
+        &self,
+        slot: u64,
+        num_constraints: usize,
+    ) -> Result<(), DatabaseError> {
+        let mut client = self.pool.get().await?;
+        client
+            .execute(
+                "
+            INSERT INTO delivered_constraints (slot, num_constraints)
+            VALUES ($1, $2)
+            ON CONFLICT (slot) DO UPDATE
+            SET num_constraints = EXCLUDED.num_constraints,
+                created_at = NOW()
+            ",
+                &[&(slot as i64), &(num_constraints as i32)],
+            )
+            .await?;
+        Ok(())
+    }
+
     async fn store_block_submission(
         &self,
         submission: Arc<SignedBidSubmission>,

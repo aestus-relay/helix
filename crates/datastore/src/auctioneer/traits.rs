@@ -42,10 +42,13 @@ pub trait Auctioneer: Send + Sync + Clone {
         slot: u64,
         constraints: SignedConstraintsWithProofData,
     ) -> Result<(), AuctioneerError>;
+
     async fn get_constraints(
         &self,
         slot: u64,
     ) -> Result<Option<Vec<SignedConstraintsWithProofData>>, AuctioneerError>;
+
+    async fn get_constraints_count(&self, slot: u64) -> Result<usize, AuctioneerError>;
 
     async fn save_inclusion_proof(
         &self,
@@ -54,6 +57,7 @@ pub trait Auctioneer: Send + Sync + Clone {
         bid_block_hash: &Hash32,
         inclusion_proof: &InclusionProofs,
     ) -> Result<(), AuctioneerError>;
+
     async fn get_inclusion_proof(
         &self,
         slot: u64,

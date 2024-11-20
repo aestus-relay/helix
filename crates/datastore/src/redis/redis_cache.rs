@@ -19,7 +19,7 @@ use helix_common::{
     versioned_payload::PayloadAndBlobs,
     ProposerInfo,
 };
-use redis::{AsyncCommands, RedisResult, Script, Value};
+use redis::{AsyncCommands, Commands, RedisResult, Script, Value};
 use serde::{de::DeserializeOwned, Serialize};
 use tokio::sync::broadcast;
 use tracing::{error, trace};
@@ -121,7 +121,7 @@ impl RedisCache {
                 Ok(payload) => payload,
                 Err(err) => {
                     error!(err=%err, "Failed to get payload from message");
-                    continue
+                    continue;
                 }
             };
 
@@ -129,14 +129,14 @@ impl RedisCache {
                 Ok(data) => data,
                 Err(err) => {
                     error!(err=%err, "Failed to get data from redis");
-                    continue
+                    continue;
                 }
             };
             let sig_bid: SignedBuilderBidWrapper = match serde_json::from_str(&data) {
                 Ok(sig_bid) => sig_bid,
                 Err(err) => {
                     error!(err=%err, "Failed to deserialize data");
-                    continue
+                    continue;
                 }
             };
 
@@ -146,13 +146,13 @@ impl RedisCache {
                 Ok(serialized) => serialized,
                 Err(err) => {
                     error!(err=%err, "Failed to serialize top bid update");
-                    continue
+                    continue;
                 }
             };
 
             if let Err(err) = self.tx.send(serialized) {
                 error!(err=%err, "Failed to send top bid update");
-                continue
+                continue;
             }
         }
 
@@ -196,7 +196,7 @@ impl RedisCache {
         let mut conn = self.pool.get().await?;
         let entries: HashMap<String, Vec<u8>> = conn.hgetall(key).await?;
         if entries.is_empty() {
-            return Ok(None)
+            return Ok(None);
         }
 
         let mut deserialized_entries = HashMap::with_capacity(entries.len());
@@ -373,7 +373,7 @@ impl RedisCache {
             return Err(RedisCacheError::RedisCopyError {
                 from: from.to_string(),
                 to: to.to_string(),
-            })
+            });
         }
 
         // If an expiry is provided, set the expiry for the 'to' key
@@ -443,7 +443,7 @@ impl RedisCache {
         floor_value: U256,
     ) -> Result<(), RedisCacheError> {
         if builder_bids.is_empty() {
-            return Ok(())
+            return Ok(());
         }
 
         // Determine the current top bid.
@@ -598,6 +598,13 @@ impl Auctioneer for RedisCache {
         self.get(&key).await.map_err(AuctioneerError::RedisError)
     }
 
+    async fn get_constraints_count(&self, slot: u64) -> Result<usize, AuctioneerError> {
+        let key = get_constraints_key(slot);
+        let mut conn = self.pool.get().await.map_err(RedisCacheError::from)?;
+        let count: usize = conn.llen(key).await.map_err(RedisCacheError::from)?;
+        Ok(count)
+    }
+
     async fn save_inclusion_proof(
         &self,
         slot: u64,
@@ -634,7 +641,7 @@ impl Auctioneer for RedisCache {
 
         if let Some(last_slot_delivered) = last_slot_delivered_res {
             if slot < last_slot_delivered {
-                return Err(AuctioneerError::PastSlotAlreadyDelivered)
+                return Err(AuctioneerError::PastSlotAlreadyDelivered);
             }
 
             if slot == last_slot_delivered {
@@ -643,12 +650,12 @@ impl Auctioneer for RedisCache {
                 match last_hash_delivered_res {
                     Some(last_hash_delivered) => {
                         if *hash != last_hash_delivered {
-                            return Err(AuctioneerError::AnotherPayloadAlreadyDeliveredForSlot)
+                            return Err(AuctioneerError::AnotherPayloadAlreadyDeliveredForSlot);
                         }
                     }
                     None => return Err(AuctioneerError::UnexpectedValueType),
                 }
-                return Ok(())
+                return Ok(());
             }
         }
 
@@ -818,7 +825,7 @@ impl Auctioneer for RedisCache {
         // Exit early if cancellations aren't enabled and the bid is below the floor.
         let is_bid_above_floor = submission.bid_trace().value > floor_value;
         if !cancellations_enabled && !is_bid_above_floor {
-            return Ok(None)
+            return Ok(None);
         }
 
         // Save the execution payload
@@ -935,7 +942,7 @@ impl Auctioneer for RedisCache {
     async fn demote_builder(&self, builder_pub_key: &BlsPublicKey) -> Result<(), AuctioneerError> {
         let mut builder_info = self.get_builder_info(builder_pub_key).await?;
         if !builder_info.is_optimistic {
-            return Ok(())
+            return Ok(());
         }
         builder_info.is_optimistic = false;
         Ok(self.hset(BUILDER_INFO_KEY, &format!("{builder_pub_key:?}"), &builder_info).await?)
@@ -946,7 +953,7 @@ impl Auctioneer for RedisCache {
         builder_infos: Vec<BuilderInfoDocument>,
     ) -> Result<(), AuctioneerError> {
         if builder_infos.is_empty() {
-            return Ok(())
+            return Ok(());
         }
 
         // Fetch current builder info
@@ -993,7 +1000,7 @@ impl Auctioneer for RedisCache {
         // Exit early if cancellations aren't enabled and the bid is below the floor.
         let is_bid_above_floor = builder_bid.value() > floor_value;
         if !cancellations_enabled && !is_bid_above_floor {
-            return Ok(())
+            return Ok(());
         }
 
         // Load the latest bids from all builders for the current slot, parent hash, and proposer
@@ -1035,7 +1042,7 @@ impl Auctioneer for RedisCache {
         // TODO: the floor may have raised but we will exit early here.
         state.top_bid_value = builder_bids.values().max().cloned().unwrap_or(U256::ZERO);
         if state.top_bid_value == state.prev_top_bid_value {
-            return Ok(())
+            return Ok(());
         }
 
         // Update the top bid
@@ -1054,7 +1061,7 @@ impl Auctioneer for RedisCache {
         // Handle floor value updates only if needed.
         // Only non-cancellable bids above the floor should set a new floor.
         if cancellations_enabled || !is_bid_above_floor {
-            return Ok(())
+            return Ok(());
         }
         self.set_new_floor(
             builder_bid.value(),
@@ -1089,7 +1096,7 @@ impl Auctioneer for RedisCache {
         // Exit early if cancellations aren't enabled and the bid is below the floor.
         let is_bid_above_floor = submission.value() > floor_value;
         if !cancellations_enabled && !is_bid_above_floor {
-            return Ok(None)
+            return Ok(None);
         }
 
         // Cache the transaction root for the header
@@ -1237,7 +1244,7 @@ impl Auctioneer for RedisCache {
             self.hgetall(BUILDER_INFO_KEY).await?;
 
         if redis_builder_infos.is_none() {
-            return Ok(pending_blocks)
+            return Ok(pending_blocks);
         }
 
         for (bulder_pub_key_str, builder_info) in redis_builder_infos.unwrap() {
@@ -1259,7 +1266,7 @@ impl Auctioneer for RedisCache {
 
                     if pending_block.is_empty() {
                         expired.push(block_hash_str);
-                        continue
+                        continue;
                     }
 
                     let slot = match pending_block.get("slot") {
@@ -1322,10 +1329,10 @@ impl Auctioneer for RedisCache {
     /// status.
     async fn try_acquire_or_renew_leadership(&self, leader_id: &str) -> bool {
         if self.renew_lock(HOUSEKEEPER_LOCK_KEY, leader_id, HOUSEKEEPER_LOCK_EXPIRY_MS).await {
-            return true
+            return true;
         }
 
-        return self.set_lock(HOUSEKEEPER_LOCK_KEY, leader_id, HOUSEKEEPER_LOCK_EXPIRY_MS).await
+        return self.set_lock(HOUSEKEEPER_LOCK_KEY, leader_id, HOUSEKEEPER_LOCK_EXPIRY_MS).await;
     }
 
     async fn kill_switch_enabled(&self) -> Result<bool, AuctioneerError> {
