@@ -146,6 +146,7 @@ impl DatabaseService for MockDatabaseService {
 
     async fn save_delivered_constraints(
         &self,
+        _block_hash: ByteVector<32>,
         _slot: u64,
         _num_constraints: usize,
     ) -> Result<(), DatabaseError> {

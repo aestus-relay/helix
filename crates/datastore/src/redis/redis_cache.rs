@@ -600,9 +600,16 @@ impl Auctioneer for RedisCache {
 
     async fn get_constraints_count(&self, slot: u64) -> Result<usize, AuctioneerError> {
         let key = get_constraints_key(slot);
-        let mut conn = self.pool.get().await.map_err(RedisCacheError::from)?;
-        let count: usize = conn.llen(key).await.map_err(RedisCacheError::from)?;
-        Ok(count)
+        let data: Option<Vec<SignedConstraintsWithProofData>> = self.get(&key)
+            .await
+            .map_err(AuctioneerError::RedisError)?;
+        
+        if let Some(constraints) = data {
+            Ok(constraints.len())
+        } else {
+            // None
+            Ok(0)
+        }
     }
 
     async fn save_inclusion_proof(

@@ -876,6 +876,7 @@ where
             let request_id_clone = *request_id;
             let mut trace_clone = trace.clone();
             let payload_clone = payload.clone();
+            let constraints_payload_clone = payload.clone();
 
             tokio::spawn(async move {
                 if let Err(err) = self_clone
@@ -912,7 +913,9 @@ where
                     )
                     .await;
                 self_clone
-                    .save_delivered_constraints_info(signed_blinded_block.message().slot())
+                    .save_delivered_constraints_info(
+                        constraints_payload_clone.execution_payload.block_hash().clone(), 
+                        signed_blinded_block.message().slot())
                     .await;
             });
         } else {
@@ -950,7 +953,7 @@ where
             )
             .await;
 
-            self.save_delivered_constraints_info(signed_blinded_block.message().slot()).await;
+            self.save_delivered_constraints_info(payload.execution_payload.block_hash().clone(),signed_blinded_block.message().slot()).await;
 
             // Calculate the remaining time needed to reach the target propagation duration.
             // Conditionally pause the execution until we hit
@@ -1384,12 +1387,12 @@ where
         });
     }
 
-    async fn save_delivered_constraints_info(&self, slot: u64) {
+    async fn save_delivered_constraints_info(&self, block_hash: ByteVector<32>, slot: u64) {
         match self.auctioneer.get_constraints_count(slot).await {
             Ok(num_constraints) => {
                 let db = self.db.clone();
                 tokio::spawn(async move {
-                    if let Err(err) = db.save_delivered_constraints(slot, num_constraints).await {
+                    if let Err(err) = db.save_delivered_constraints(block_hash, slot, num_constraints).await {
                         error!(error = %err, "Error saving delivered constraints to database");
                     }
                 });

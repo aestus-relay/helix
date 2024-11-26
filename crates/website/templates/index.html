@@ -193,11 +193,11 @@
                     <tbody>
                     <tr title="Currently active or pending validators on Ethereum PoS">
                         <td>Validators active or in queue</td>
-                        <td>{{ network_validators }}</td>
+                        <td>{{ network_validators|pretty_int }}</td>
                     </tr>
                     <tr title="Validators who have sent a registration at least once">
                         <td> Registered Validators (all time)</td>
-                        <td>{{ registered_validators }}</td>
+                        <td>{{ registered_validators|pretty_int }}</td>
                     </tr>
                     <tr title="Last slot delivered through this relay">
                         <td>Latest slot</td>
@@ -247,7 +247,8 @@
                         </svg>
                     </a>
                 </th>
-                <th>Num txs</th>
+                <th>Txs</th>
+                <th>Preconfs</th>
                 <th>Blobs</th>
                 <th>Block hash</th>
                 <th></th>
@@ -263,6 +264,7 @@
                 <td>{{ payload.block_number|pretty_int }}</td>
                 <td>{{ payload.bid_trace.value|wei_to_eth }}</td>
                 <td>{{ payload.num_txs }}</td>
+                <td>{{ payload.num_constraints }}</td>
                 <td>
                     <div title="Blob Gas Used: {{ payload.blob_gas_used }}">{{ payload.num_blobs }}</div>
                 </td>

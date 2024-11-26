@@ -35,7 +35,8 @@ impl FromRow for DeliveredPayload {
             num_blobs: parse_i32_to_usize(row.get::<&str, i32>("num_blobs"))?,
             blob_gas_used: parse_i32_to_u64(row.get::<&str, i32>("blob_gas_used"))?,
             excess_blob_gas: parse_i32_to_u64(row.get::<&str, i32>("excess_blob_gas"))?,
-            epoch: parse_i32_to_u64(row.get::<&str, i32>("slot_number"))?/32 //Calculate directly
+            epoch: parse_i32_to_u64(row.get::<&str, i32>("slot_number"))?/32, //Calculate directly
+            num_constraints: parse_i32_to_usize(row.get::<&str, i32>("num_constraints"))?,
         })
     }
 }
@@ -58,11 +59,14 @@ impl WebsiteDatabaseService for PostgresDatabaseService {
             block_submission.block_number,
             block_submission.num_blobs,
             block_submission.blob_gas_used,
-            block_submission.excess_blob_gas
+            block_submission.excess_blob_gas,
+            COALESCE(delivered_constraints.num_constraints, 0) AS num_constraints
         FROM
             delivered_payload
         INNER JOIN
             block_submission ON block_submission.block_hash = delivered_payload.block_hash
+        LEFT JOIN
+            delivered_constraints ON delivered_constraints.block_hash = block_submission.block_hash
         ORDER BY block_submission.slot_number DESC
         LIMIT $1
         ";

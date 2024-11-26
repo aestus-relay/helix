@@ -16,6 +16,7 @@ pub struct DeliveredPayload {
     pub num_blobs: usize,
     pub blob_gas_used: u64,
     pub excess_blob_gas: u64,
+    pub num_constraints: usize,
 }
 
 impl DeliveredPayload {

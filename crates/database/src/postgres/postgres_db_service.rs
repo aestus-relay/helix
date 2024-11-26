@@ -1077,20 +1077,23 @@ impl DatabaseService for PostgresDatabaseService {
 
     async fn save_delivered_constraints(
         &self,
+        block_hash: ByteVector<32>,
         slot: u64,
         num_constraints: usize,
     ) -> Result<(), DatabaseError> {
-        let mut client = self.pool.get().await?;
+        let client = self.pool.get().await?;
         client
             .execute(
                 "
-            INSERT INTO delivered_constraints (slot, num_constraints)
-            VALUES ($1, $2)
-            ON CONFLICT (slot) DO UPDATE
-            SET num_constraints = EXCLUDED.num_constraints,
-                created_at = NOW()
+            INSERT INTO delivered_constraints (block_hash, slot_number, num_constraints)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (block_hash) DO UPDATE SET num_constraints = EXCLUDED.num_constraints
             ",
-                &[&(slot as i64), &(num_constraints as i32)],
+                &[
+                    &block_hash.as_ref(),
+                    &(slot as i32),
+                    &(num_constraints as i32),
+                ],
             )
             .await?;
         Ok(())

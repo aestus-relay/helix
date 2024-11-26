@@ -152,6 +152,7 @@ pub trait DatabaseService: Send + Sync + Clone {
 
     async fn save_delivered_constraints(
         &self,
+        block_hash: ByteVector<32>,
         slot: u64,
         num_constraints: usize,
     ) -> Result<(), DatabaseError>;
