@@ -173,6 +173,7 @@ impl ApiService {
 
         gossiper.start_server(builder_gossip_sender, proposer_gossip_sender).await;
 
+
         let proposer_api = Arc::new(ProposerApiProd::new(
             auctioneer.clone(),
             db.clone(),
@@ -182,8 +183,8 @@ impl ApiService {
             chain_info.clone(),
             slot_update_sender.clone(),
             validator_preferences.clone(),
-            config.target_get_payload_propagation_duration_ms,
             proposer_gossip_receiver,
+            config.clone(),
         ));
 
         let data_api = Arc::new(DataApiProd::new(validator_preferences.clone(), db.clone()));
