@@ -249,11 +249,14 @@ where
         };
     
         let stream = stream.map(|constraint| {
-            let data = serde_json::to_string(&constraint).unwrap_or_else(|_| "{}".to_string());
-            Ok(Event::default().data(data))
+            let json = serde_json::to_string(&constraint).unwrap_or_else(|_| "{}".to_string());
+            Ok(Event::default()
+                .data(json)
+                .event("signed_constraint")
+                .retry(Duration::from_millis(50)))
         });
     
-        Sse::new(stream).keep_alive(KeepAlive::new())
+        Sse::new(stream).keep_alive(KeepAlive::default())
     }
 
     /// This endpoint returns the active delegations for the validator scheduled to propose
