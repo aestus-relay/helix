@@ -17,6 +17,7 @@ helix-housekeeper.workspace = true
 
 # Async and Networking 
 async-trait = { workspace = true }
+async-stream = "0.3.6"
 axum = { workspace = true }
 tower = { workspace = true }
 futures = { workspace = true }

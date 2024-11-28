@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    convert::Infallible,
     io::Read,
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -30,15 +31,15 @@ use hyper::HeaderMap;
 use reth_primitives::B256;
 use tokio::{
     sync::{
-        broadcast,
         mpsc::{self, error::SendError, Receiver, Sender},
         RwLock,
     },
     time::{self, Instant},
 };
-use tokio_stream::wrappers::BroadcastStream;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
+
+use async_stream::stream;
 
 use helix_common::{
     api::{
@@ -58,7 +59,7 @@ use helix_common::{
     SignedBuilderBid, SubmissionTrace,
 };
 use helix_database::DatabaseService;
-use helix_datastore::{types::SaveBidAndUpdateTopBidResponse, Auctioneer};
+use helix_datastore::{types::SaveBidAndUpdateTopBidResponse, Auctioneer, redis::redis_cache::RedisCache};
 use helix_housekeeper::{ChainUpdate, PayloadAttributesUpdate, SlotUpdate};
 use helix_utils::{get_payload_attributes_key, has_reached_fork};
 
@@ -68,7 +69,6 @@ use crate::{
     builder::{
         error::BuilderApiError, traits::BlockSimulator, BlockSimRequest, DbInfo, OptimisticVersion,
     },
-    constraints::api::ConstraintsHandle,
     gossiper::{
         traits::GossipClientTrait,
         types::{
@@ -101,7 +101,7 @@ where
     signing_context: Arc<RelaySigningContext>,
     relay_config: Arc<RelayConfig>,
     db_sender: Sender<DbInfo>,
-    constraints_tx: broadcast::Sender<SignedConstraints>,
+    redis_cache: Arc<RedisCache>,
 
     /// Information about the current head slot and next proposer duty
     curr_slot_info: Arc<RwLock<(u64, Option<BuilderGetValidatorsResponseEntry>)>>,
@@ -127,9 +127,9 @@ where
         relay_config: RelayConfig,
         slot_update_subscription: Sender<Sender<ChainUpdate>>,
         gossip_receiver: Receiver<GossipedMessage>,
-    ) -> (Self, ConstraintsHandle) {
+        redis_cache: Arc<RedisCache>,
+    ) -> Self {
         let (db_sender, db_receiver) = mpsc::channel::<DbInfo>(10_000);
-        let (constraints_tx, _) = broadcast::channel(128);
 
         // Spin up db processing task
         let db_clone = db.clone();
@@ -147,7 +147,7 @@ where
             relay_config: Arc::new(relay_config),
 
             db_sender,
-            constraints_tx: constraints_tx.clone(),
+            redis_cache,
 
             curr_slot_info: Arc::new(RwLock::new((0, None))),
             proposer_duties_response: Arc::new(RwLock::new(None)),
@@ -172,7 +172,7 @@ where
             }
         });
 
-        (api, ConstraintsHandle { constraints_tx })
+        api
     }
 
     /// Implements this API: <https://flashbots.github.io/relay-specs/#/Builder/getValidators>
@@ -233,28 +233,27 @@ where
     /// Implements this API: <https://docs.boltprotocol.xyz/technical-docs/api/relay#constraints-stream>
     pub async fn constraints_stream(
         Extension(api): Extension<Arc<BuilderApi<A, DB, S, G>>>,
-    ) -> Sse<impl Stream<Item = Result<Event, BuilderApiError>>> {
-        let constraints_rx = api.constraints_tx.subscribe();
-        let stream = BroadcastStream::new(constraints_rx);
-
-        let filtered = stream.map(|result| match result {
-            Ok(constraint) => match serde_json::to_string(&vec![constraint]) {
-                Ok(json) => Ok(Event::default()
-                    .data(json)
-                    .event("signed_constraint")
-                    .retry(Duration::from_millis(50))),
-                Err(err) => {
-                    warn!(error = %err, "Failed to serialize constraint");
-                    Err(BuilderApiError::SszSerializeError)
+    ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+        let stream = stream! {
+            match api.redis_cache.subscribe_constraints().await {
+                Ok(mut sub_stream) => {
+                    while let Some(constraint) = sub_stream.next().await {
+                        yield constraint;
+                    }
                 }
-            },
-            Err(err) => {
-                warn!(error = %err, "Error receiving constraint message");
-                Err(BuilderApiError::InternalError)
-            }
-        });
+                Err(err) => {
+                    error!(error = %err, "Failed to subscribe to constraints");
 
-        Sse::new(filtered).keep_alive(KeepAlive::default())
+                }
+            }
+        };
+    
+        let stream = stream.map(|constraint| {
+            let data = serde_json::to_string(&constraint).unwrap_or_else(|_| "{}".to_string());
+            Ok(Event::default().data(data))
+        });
+    
+        Sse::new(stream).keep_alive(KeepAlive::new())
     }
 
     /// This endpoint returns the active delegations for the validator scheduled to propose

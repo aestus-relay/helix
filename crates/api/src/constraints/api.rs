@@ -15,7 +15,7 @@ use helix_common::{
     ConstraintSubmissionTrace, ConstraintsApiConfig,
 };
 use helix_database::DatabaseService;
-use helix_datastore::Auctioneer;
+use helix_datastore::{Auctioneer, redis::redis_cache::RedisCache};
 use helix_utils::signing::{verify_signed_message, COMMIT_BOOST_DOMAIN};
 use std::{
     collections::HashSet,
@@ -44,20 +44,7 @@ where
     chain_info: Arc<ChainInfo>,
     constraints_api_config: Arc<ConstraintsApiConfig>,
 
-    constraints_handle: ConstraintsHandle,
-}
-
-#[derive(Clone)]
-pub struct ConstraintsHandle {
-    pub(crate) constraints_tx: broadcast::Sender<SignedConstraints>,
-}
-
-impl ConstraintsHandle {
-    pub fn send_constraints(&self, constraints: SignedConstraints) {
-        if self.constraints_tx.send(constraints).is_err() {
-            error!("Failed to send constraints to the constraints channel");
-        }
-    }
+    redis_cache: Arc<RedisCache>,
 }
 
 impl<A, DB> ConstraintsApi<A, DB>
@@ -69,10 +56,15 @@ where
         auctioneer: Arc<A>,
         db: Arc<DB>,
         chain_info: Arc<ChainInfo>,
-        constraints_handle: ConstraintsHandle,
         constraints_api_config: Arc<ConstraintsApiConfig>,
+        redis_cache: Arc<RedisCache>,
     ) -> Self {
-        Self { auctioneer, db, chain_info, constraints_handle, constraints_api_config }
+        Self { 
+            auctioneer, 
+            db, 
+            chain_info,  
+            constraints_api_config,
+            redis_cache, }
     }
 
     /// Handles the submission of batch of signed constraints.
@@ -167,8 +159,11 @@ where
                 };
             }
 
-            // Send to the constraints channel
-            api.constraints_handle.send_constraints(constraint.clone());
+            // Publish the constraint to the Redis channel
+            if let Err(err) = api.redis_cache.publish_constraint(&constraint).await {
+                error!(error = %err, request_id = %request_id, "Failed to publish constraint to Redis");
+                return Err(ConstraintsApiError::PublishError(err.to_string()));
+            }
 
             // Finally add the constraints to the redis cache
             if let Err(err) = api

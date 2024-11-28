@@ -51,7 +51,9 @@ impl ApiService {
 
         let builder_infos = db.get_all_builder_infos().await.expect("failed to load builder infos");
 
-        let auctioneer = Arc::new(RedisCache::new(&config.redis.url, builder_infos).await.unwrap());
+        let redis_cache = Arc::new(RedisCache::new(&config.redis.url, builder_infos).await.unwrap());
+
+        let auctioneer = redis_cache.clone();
 
         let auctioneer_clone = auctioneer.clone();
         tokio::spawn(async move {
@@ -158,7 +160,7 @@ impl ApiService {
         let (builder_gossip_sender, builder_gossip_receiver) = tokio::sync::mpsc::channel(10_000);
         let (proposer_gossip_sender, proposer_gossip_receiver) = tokio::sync::mpsc::channel(10_000);
 
-        let (builder_api, constraints_handle) = BuilderApiProd::new(
+        let builder_api = BuilderApiProd::new(
             auctioneer.clone(),
             db.clone(),
             chain_info.clone(),
@@ -168,6 +170,7 @@ impl ApiService {
             config.clone(),
             slot_update_sender.clone(),
             builder_gossip_receiver,
+            redis_cache.clone(),
         );
         let builder_api = Arc::new(builder_api);
 
@@ -195,8 +198,8 @@ impl ApiService {
             auctioneer.clone(),
             db.clone(),
             chain_info.clone(),
-            constraints_handle,
-            constraints_api_config,
+            constraints_api_config.clone(),
+            redis_cache.clone(),
         ));
 
         let bids_cache: Arc<BidsCache> = Arc::new(

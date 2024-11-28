@@ -15,13 +15,13 @@ use helix_common::{
     },
     bid_submission::{v2::header_submission::SignedHeaderSubmission, BidSubmission},
     pending_block::PendingBlock,
-    proofs::SignedConstraintsWithProofData,
+    proofs::{SignedConstraintsWithProofData, SignedConstraints},
     versioned_payload::PayloadAndBlobs,
     ProposerInfo,
 };
-use redis::{AsyncCommands, Commands, RedisResult, Script, Value};
+use redis::{AsyncCommands, RedisResult, Script, Value};
 use serde::{de::DeserializeOwned, Serialize};
-use tokio::sync::broadcast;
+use tokio::sync::{mpsc, broadcast};
 use tracing::{error, trace};
 
 use helix_common::{
@@ -33,7 +33,7 @@ use helix_common::{
 };
 use helix_database::types::BuilderInfoDocument;
 
-use tokio_stream::{wrappers::BroadcastStream, Stream, StreamExt};
+use tokio_stream::{wrappers::BroadcastStream, wrappers::ReceiverStream, Stream, StreamExt};
 
 use crate::{
     error::AuctioneerError,
@@ -65,6 +65,7 @@ use super::utils::{
 
 // Constraints expire after 1 epoch = 32 slots.
 const CONSTRAINTS_CACHE_EXPIRY_S: usize = 12 * 32;
+const CONSTRAINTS_CHANNEL: &str = "constraints_channel";
 
 const BID_CACHE_EXPIRY_S: usize = 45;
 const PENDING_BLOCK_EXPIRY_S: usize = 45;
@@ -106,6 +107,49 @@ impl RedisCache {
 
         Ok(cache)
     }
+
+    pub async fn publish_constraint(&self, constraint: &SignedConstraints) -> Result<(), RedisCacheError> {
+        let mut conn = self.pool.get().await?;
+        let serialized = serde_json::to_string(constraint)?;
+        conn.publish(CONSTRAINTS_CHANNEL, serialized).await?;
+        Ok(())
+    }
+
+    pub async fn subscribe_constraints(&self) -> Result<impl Stream<Item = SignedConstraints>, RedisCacheError> {
+        let conn = self.pool.get().await?;
+        let mut pubsub = deadpool_redis::Connection::take(conn).into_pubsub();
+        pubsub.subscribe(CONSTRAINTS_CHANNEL).await?;
+
+        let (tx, rx) = mpsc::channel::<SignedConstraints>(100);
+
+        // Spawn a task to listen for messages and send them over the channel
+        tokio::spawn(async move {
+            let mut message_stream = pubsub.on_message();
+
+            while let Some(msg) = message_stream.next().await {
+                match msg.get_payload::<String>() {
+                    Ok(payload) => {
+                        match serde_json::from_str::<SignedConstraints>(&payload) {
+                            Ok(constraint) => {
+                                if tx.send(constraint).await.is_err() {
+                                    error!("Failed to send constraint over channel");
+                                    break;
+                                }
+                            }
+                            Err(err) => {
+                                error!(error = %err, "Failed to deserialize constraint from Redis");
+                            }
+                        }
+                    }
+                    Err(err) => {
+                        error!(error = %err, "Failed to get payload from Redis message");
+                    }
+                }
+            }
+        });
+
+        Ok(ReceiverStream::new(rx))
+    }    
 
     pub async fn start_best_bid_listener(&self) -> Result<(), RedisCacheError> {
         let conn = self.pool.get().await?;

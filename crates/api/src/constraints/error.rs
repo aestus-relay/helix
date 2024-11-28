@@ -65,6 +65,9 @@ pub enum ConstraintsApiError {
 
     #[error("Pubkey not authorized to submit constraints: {0}")]
     PubkeyNotAuthorized(PublicKey),
+
+    #[error("Failed to publish constraint to Redis: {0}")]
+    PublishError(String),
 }
 
 impl IntoResponse for ConstraintsApiError {
@@ -123,6 +126,10 @@ impl IntoResponse for ConstraintsApiError {
                 format!("Pubkey not authorized to submit constraints: {pubkey}"),
             )
                 .into_response(),
+
+            ConstraintsApiError::PublishError(err) => {
+                (StatusCode::INTERNAL_SERVER_ERROR, format!("Publish error: {err}")).into_response()
+            }
         }
     }
 }
