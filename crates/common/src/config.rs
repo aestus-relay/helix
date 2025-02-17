@@ -140,17 +140,20 @@ pub struct PostgresConfig {
 
 #[derive(Serialize, Deserialize, Clone, Default)]
 pub struct TimingGameConfig {
-    /// Max time we will delay for before returning get header.
-    #[serde(default = "default_u64::<650>")]
-    pub max_header_delay_ms: u64,
-    /// Max ms into slot we will sleep up to. e.g., if a request is made 2.4s into the next slot
-    /// and the limit is 2.5s we will only sleep 100ms.
-    #[serde(default = "default_u64::<2000>")]
-    pub latest_header_delay_ms_in_slot: u64,
-    /// Default latency to assume if the client does not provide a "request start timestamp"
-    /// header.
-    #[serde(default = "default_u64::<150>")]
-    pub default_client_latency_ms: u64,
+    #[serde(default)]
+    pub latency_service_uri: String,
+    #[serde(default = "default_u64::<0>")]
+    pub get_header_response_receive_by_ms: u64,
+    #[serde(default = "default_u64::<300>")]
+    pub default_client_rtt_ms: u64,
+    #[serde(default = "default_rtt_to_handshake_scale")]
+    pub rtt_to_handshake_scale: f64,
+    #[serde(default = "default_rtt_to_response_scale")]
+    pub rtt_to_response_scale: f64,
+    #[serde(default = "default_u64::<50>")]
+    pub latency_request_timeout_ms: u64,
+    #[serde(default)]
+    pub delayed_header_user_agents: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Default)]
@@ -161,6 +164,14 @@ pub struct BlockMergingConfig {
     /// Maximum age of a merged bid before it is considered stale and discarded.
     #[serde(default = "default_u64::<250>")]
     pub max_merged_bid_age_ms: u64,
+}
+
+fn default_rtt_to_handshake_scale() -> f64 {
+    1.5
+}
+
+fn default_rtt_to_response_scale() -> f64 {
+    0.5
 }
 
 fn default_port() -> u16 {

@@ -5,6 +5,7 @@ mod block_merging;
 mod error;
 mod get_header;
 mod get_payload;
+pub mod latency;
 mod register;
 mod types;
 
@@ -27,6 +28,7 @@ pub use types::*;
 use crate::{
     builder::BlockMergeRequest, gossiper::grpc_gossiper::GrpcGossiperClientManager,
     proposer::block_merging::BestMergedBlock, router::Terminating, Api,
+    proposer::latency::LatencyEstimator
 };
 
 #[derive(Clone)]
@@ -36,6 +38,7 @@ pub struct ProposerApi<A: Api> {
     pub gossiper: Arc<GrpcGossiperClientManager>,
     pub broadcasters: Vec<Arc<BlockBroadcaster>>,
     pub multi_beacon_client: Arc<MultiBeaconClient>,
+    pub latency_estimator: Arc<LatencyEstimator>,
     pub metadata_provider: Arc<A::MetadataProvider>,
     pub signing_context: Arc<RelaySigningContext>,
 
@@ -66,6 +69,7 @@ impl<A: Api> ProposerApi<A> {
         signing_context: Arc<RelaySigningContext>,
         broadcasters: Vec<Arc<BlockBroadcaster>>,
         multi_beacon_client: Arc<MultiBeaconClient>,
+        latency_estimator: Arc<LatencyEstimator>,
         chain_info: Arc<ChainInfo>,
         validator_preferences: Arc<ValidatorPreferences>,
         relay_config: RelayConfig,
@@ -81,6 +85,7 @@ impl<A: Api> ProposerApi<A> {
             broadcasters,
             signing_context,
             multi_beacon_client,
+            latency_estimator,
             chain_info,
             metadata_provider,
             validator_preferences,

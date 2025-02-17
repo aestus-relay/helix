@@ -24,7 +24,7 @@ use crate::{
     builder::{self, api::BuilderApi, SimulatorManager},
     gossip::{self},
     gossiper::grpc_gossiper::GrpcGossiperClientManager,
-    proposer::ProposerApi,
+    proposer::{ProposerApi,latency::LatencyEstimator},
     relay_data::{BidsCache, DataApi, DeliveredPayloadsCache, SelectiveExpiry},
     router::build_router,
     Api,
@@ -55,6 +55,14 @@ pub async fn run_api_service<A: Api>(
             .await
             .expect("failed to initialise gRPC gossiper"),
     );
+
+    let latency_estimator = Arc::new(LatencyEstimator::new(
+        config.timing_game_config.latency_service_uri.clone(),
+        config.timing_game_config.default_client_rtt_ms,
+        config.timing_game_config.rtt_to_handshake_scale,
+        config.timing_game_config.rtt_to_response_scale,
+        config.timing_game_config.latency_request_timeout_ms,
+    ));
 
     let validator_preferences = Arc::new(config.validator_preferences.clone());
 
@@ -113,6 +121,7 @@ pub async fn run_api_service<A: Api>(
         relay_signing_context,
         broadcasters,
         multi_beacon_client,
+        latency_estimator.clone(),
         chain_info.clone(),
         validator_preferences.clone(),
         config.clone(),

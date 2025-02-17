@@ -8,7 +8,7 @@ use serde::Deserialize;
 
 use crate::proposer::error::ProposerApiError;
 
-pub const GET_HEADER_REQUEST_CUTOFF_MS: i64 = 3000;
+pub const GET_HEADER_REQUEST_CUTOFF_MS: u64 = 3000;
 
 #[derive(Debug, Deserialize)]
 pub struct GetHeaderParams {

@@ -4,7 +4,12 @@ use std::{
 };
 
 use alloy_primitives::{B256, U256};
-use axum::{extract::Path, http::HeaderMap, response::IntoResponse, Extension};
+use axum::{
+    extract::{Path, Query, ConnectInfo},
+    http::HeaderMap,
+    response::IntoResponse,
+    Extension,
+};
 use helix_common::{
     chain_info::ChainInfo,
     metadata_provider::MetadataProvider,
@@ -15,6 +20,8 @@ use helix_common::{
 };
 use helix_database::DatabaseService;
 use helix_types::BlsPublicKeyBytes;
+use std::collections::HashMap;
+use std::net::SocketAddr;
 use tokio::time::sleep;
 use tracing::{debug, error, info, warn, Instrument};
 
@@ -44,6 +51,8 @@ impl<A: Api> ProposerApi<A> {
         Extension(Terminating(terminating)): Extension<Terminating>,
         headers: HeaderMap,
         Path(GetHeaderParams { slot, parent_hash, pubkey }): Path<GetHeaderParams>,
+        Query(query_params): Query<HashMap<String, String>>,
+        ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
     ) -> Result<impl IntoResponse, ProposerApiError> {
         if terminating.load(Ordering::Relaxed) || proposer_api.auctioneer.kill_switch_enabled() {
             return Err(ProposerApiError::ServiceUnavailableError);
@@ -90,17 +99,12 @@ impl<A: Api> ProposerApi<A> {
 
         let mut mev_boost = false;
 
-        // how far is the client
-        let client_latency_ms = match get_x_mev_boost_header_start_ms(&headers) {
-            Some(request_initiated_ms) => {
-                let latency = utcnow_ms().saturating_sub(request_initiated_ms);
-                mev_boost = true;
-                latency * 105 / 100 // add some buffer
-            }
-            None => proposer_api.relay_config.timing_game_config.default_client_latency_ms,
-        };
-
-        info!(client_latency_ms, mev_boost, "request latency");
+        let header_start_ms = get_x_mev_boost_header_start_ms(&headers);
+        if let Some(request_initiated_ms) = header_start_ms {
+            let latency = utcnow_ms().saturating_sub(request_initiated_ms);
+            debug!(%request_initiated_ms, %latency, "mev-boost start ts header found");
+            mev_boost = true;
+        }
 
         let client_timeout_ms = headers
             .get(HEADER_TIMEOUT_MS)
@@ -117,47 +121,30 @@ impl<A: Api> ProposerApi<A> {
                 }
             });
 
-        // If timing games are enabled for the proposer then we sleep a fixed amount before
-        // returning the header
-        if duty.entry.preferences.header_delay || client_timeout_ms.is_some() {
-            let max_sleep_time = proposer_api
-                .relay_config
-                .timing_game_config
-                .latest_header_delay_ms_in_slot
-                .saturating_sub(ms_into_slot);
+        let delay_ms = Duration::from_millis(
+            proposer_api.compute_delay(headers,
+                                       header_start_ms,
+                                       remote_addr,
+                                       ms_into_slot,
+                                       &query_params,
+                                       duty.entry.preferences.header_delay,
+                                       client_timeout_ms).await);
+        let mut get_header_metric = GetHeaderMetric::new(delay_ms);
 
-            let target_sleep_time = match client_timeout_ms {
-                Some(timeout_ms) => timeout_ms.saturating_sub(client_latency_ms),
-                None => {
-                    // TODO: convert this to a timeout instead of a delay
-                    duty.entry
-                        .preferences
-                        .delay_ms
-                        .unwrap_or(proposer_api.relay_config.timing_game_config.max_header_delay_ms)
-                }
-            };
+        debug!(target: "timing_games", 
+               ?delay_ms,
+               %ms_into_slot,
+               slot,
+               pubkey = ?bid_request.pubkey,
+               "timing game sleep");
 
-            let sleep_time_ms = std::cmp::min(max_sleep_time, target_sleep_time);
-
-            let sleep_time = Duration::from_millis(sleep_time_ms);
-            let mut get_header_metric = GetHeaderMetric::new(sleep_time);
-
-            debug!(target: "timing_games", 
-                ?sleep_time,
-                %ms_into_slot,
-                target_sleep_time,
-                max_sleep_time,
-                slot,
-                pubkey = ?bid_request.pubkey,
-                "timing game sleep");
-
-            if sleep_time > Duration::ZERO {
-                sleep(sleep_time).await;
-            }
-
-            get_header_metric.record();
+        if delay_ms > Duration::ZERO {
+            sleep(delay_ms).await;
         }
 
+        get_header_metric.record();
+
+        // Get best bid from auctioneer
         let get_best_bid_res = proposer_api.shared_best_header.load(
             bid_request.slot.into(),
             &bid_request.parent_hash,
@@ -246,6 +233,104 @@ impl<A: Api> ProposerApi<A> {
 
         Ok(axum::Json(signed_bid))
     }
+
+    pub async fn compute_delay(
+        &self,
+        headers: HeaderMap,
+        header_start_ms: Option<u64>,
+        remote_addr: SocketAddr,
+        ms_into_slot: u64,
+        query_params: &HashMap<String, String>,
+        header_delay_pref: bool,
+        client_timeout_ms: Option<u64>,
+    ) -> u64 {
+        let mut delay_ms = 0u64;
+
+        let user_agent = headers
+            .get("User-Agent")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+
+        // Check for delay from user agent
+        let mut delayed = self
+            .relay_config
+            .timing_game_config
+            .delayed_header_user_agents
+            .iter()
+            .any(|d_ua| user_agent.contains(d_ua));
+
+        // Check for delay from validator preferences
+        // This defaults to true, so if a validator specifically declines then that takes priority over UA
+        delayed = if header_delay_pref {
+            delayed
+        } else {
+            false
+        };
+
+        // Check for delay from query params
+        let mut receive_by_ms = self.relay_config
+            .timing_game_config
+            .get_header_response_receive_by_ms;
+        if let Some(header_delay_str) = query_params.get("headerDelay") {
+            if self.relay_config.timing_game_config.get_header_response_receive_by_ms != 0 {
+                if let Ok(user_delay) = header_delay_str.parse::<u64>() {
+                    receive_by_ms = user_delay;
+                    delayed = true;
+                }
+                if receive_by_ms == 0 {
+                    delayed = false;
+                }
+            }
+        }
+
+        // Adjust delay based on client timeout if provided
+        // TODO: make 50 configurable
+        if let Some(timeout_ms) = client_timeout_ms {
+            if receive_by_ms > timeout_ms {
+                receive_by_ms = timeout_ms.saturating_sub(50);
+            }
+        }
+
+        let elapsed_ms : u64 = ms_into_slot;
+        if delayed {
+            let client_ip = get_client_ip(&headers, remote_addr);
+            // Use ms_into_slot as max_elapsed_ms
+            let (elapsed_ms, response_ms) = self.latency_estimator.estimate_timing(header_start_ms, client_ip, ms_into_slot).await;
+            if elapsed_ms + response_ms < receive_by_ms {
+                delay_ms = receive_by_ms - elapsed_ms - response_ms;
+            }
+        }
+
+        // Determine the cutoff time.
+        let mut cutoff = GET_HEADER_REQUEST_CUTOFF_MS;
+        if let Some(header_cutoff_str) = query_params.get("headerCutoff") {
+            if self.relay_config.timing_game_config.get_header_response_receive_by_ms != 0 {
+                if let Ok(user_cutoff) = header_cutoff_str.parse::<u64>() {
+                    if user_cutoff <= GET_HEADER_REQUEST_CUTOFF_MS {
+                        cutoff = user_cutoff;
+                    }
+                }
+            }
+        }
+
+        // Ensure we don't delay beyond the cutoff.
+        delay_ms = cutoff
+            .checked_sub(ms_into_slot)
+            .map(|remaining| delay_ms.min(remaining))
+            .unwrap_or(0);
+
+        if delayed {
+            info!(
+                "Delaying getHeader response: elapsed_ms: {}, response_ms: {}, cutoff: {}, delay_ms: {}",
+                elapsed_ms,
+                delay_ms,
+                cutoff,
+                delay_ms
+            );
+        }
+
+        delay_ms
+    }
 }
 
 async fn save_get_header_call<DB: DatabaseService + 'static>(
@@ -290,10 +375,10 @@ fn validate_bid_request_time(
     chain_info: &ChainInfo,
     bid_request: &BidRequest,
 ) -> Result<u64, ProposerApiError> {
-    let curr_timestamp_ms = utcnow_ms() as i64;
+    let curr_timestamp_ms = utcnow_ms();
     let slot_start_timestamp = chain_info.genesis_time_in_secs +
         (bid_request.slot.as_u64() * chain_info.seconds_per_slot());
-    let ms_into_slot = curr_timestamp_ms.saturating_sub((slot_start_timestamp * 1000) as i64);
+    let ms_into_slot = curr_timestamp_ms.saturating_sub(slot_start_timestamp * 1000);
 
     if ms_into_slot > GET_HEADER_REQUEST_CUTOFF_MS {
         warn!(curr_timestamp_ms = curr_timestamp_ms, slot = %bid_request.slot, "get_request");
@@ -304,7 +389,7 @@ fn validate_bid_request_time(
         });
     }
 
-    Ok(ms_into_slot.max(0) as u64)
+    Ok(ms_into_slot.max(0))
 }
 
 pub fn is_mev_boost_client(client_name: &str) -> bool {
@@ -322,4 +407,19 @@ fn get_x_mev_boost_header_start_ms(header_map: &HeaderMap) -> Option<u64> {
     let start_time_str = header.to_str().ok()?;
     let start_time_ms: u64 = start_time_str.parse().ok()?;
     Some(start_time_ms)
+}
+
+// Extract the client IP from request headers or fall back to the remote address.
+// Always returns a String, should basically always have some sort of IP.
+pub fn get_client_ip(headers: &HeaderMap, remote_addr: SocketAddr) -> String {
+    if let Some(real_ip) = headers.get("X-Real-IP").and_then(|v| v.to_str().ok()) {
+        return real_ip.to_string();
+    }
+    if let Some(forwarded) = headers.get("X-Forwarded-For").and_then(|v| v.to_str().ok()) {
+        let ip = forwarded.split(',').next().unwrap_or_default().trim();
+        if !ip.is_empty() {
+            return ip.to_string();
+        }
+    }
+    remote_addr.ip().to_string()
 }
