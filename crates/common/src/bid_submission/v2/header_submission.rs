@@ -220,6 +220,26 @@ impl BidSubmission for SignedHeaderSubmission {
             Self::Electra(_) => helix_types::ForkName::Electra,
         }
     }
+
+    fn num_blobs(&self) -> u64 {
+        0
+    }
+
+    fn blob_gas_used(&self) -> u64 {
+        match self {
+            Self::Electra(signed_header_submission) => {
+                signed_header_submission.message.execution_payload_header.blob_gas_used
+            }
+        }
+    }
+
+    fn excess_blob_gas(&self) -> u64 {
+        match self {
+            Self::Electra(signed_header_submission) => {
+                signed_header_submission.message.execution_payload_header.excess_blob_gas
+            }
+        }
+    }
 }
 
 impl SignedHeaderSubmission {

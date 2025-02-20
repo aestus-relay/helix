@@ -57,6 +57,12 @@ pub trait BidSubmission {
     fn validate(&self) -> Result<(), BidValidationError>;
 
     fn fork_name(&self) -> ForkName;
+
+    fn num_blobs(&self) -> u64;
+
+    fn blob_gas_used(&self) -> u64;
+
+    fn excess_blob_gas(&self) -> u64;
 }
 
 #[derive(Debug, Clone, thiserror::Error)]

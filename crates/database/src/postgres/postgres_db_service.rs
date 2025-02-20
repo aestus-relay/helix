@@ -8,7 +8,8 @@ use std::{
 use alloy_primitives::B256;
 use async_trait::async_trait;
 use dashmap::{DashMap, DashSet};
-use deadpool_postgres::{Config, GenericClient, ManagerConfig, Pool, RecyclingMethod};
+use deadpool_postgres::{Config, GenericClient, ManagerConfig, Pool, RecyclingMethod, SslMode};
+
 use helix_common::{
     api::{
         builder_api::{BuilderGetValidatorsResponseEntry, InclusionListWithMetadata},
@@ -30,6 +31,9 @@ use helix_types::{
 use tokio::sync::mpsc::Sender;
 use tokio_postgres::{types::ToSql, NoTls};
 use tracing::{error, info, instrument, warn};
+use rustls::RootCertStore;
+use rustls_pki_types::{pem::PemObject, CertificateDer};
+use tracing::log::debug;
 
 use crate::{
     error::DatabaseError,
@@ -117,10 +121,36 @@ impl PostgresDatabaseService {
         cfg.dbname = Some(relay_config.postgres.db_name.clone());
         cfg.user = Some(relay_config.postgres.user.clone());
         cfg.password = Some(relay_config.postgres.password.clone());
+        cfg.ssl_mode = match &relay_config.postgres.ssl_mode {
+            Some(ssl_mode) => match ssl_mode.as_str() {
+                "prefer" => Some(SslMode::Prefer),
+                "require" => Some(SslMode::Require),
+                &_ => None,
+            },
+            None => None,
+        };
         cfg.manager = Some(ManagerConfig { recycling_method: RecyclingMethod::Fast });
 
+        let connector = match cfg.ssl_mode {
+            Some(SslMode::Prefer) | Some(SslMode::Require) => {
+                let root_certificates = root_certs(relay_config.postgres.cert_file_pem.as_deref())
+                    .expect("failed to load root certificates");
+                let rustls_config = rustls::ClientConfig::builder()
+                    .with_root_certificates(Arc::new(root_certificates))
+                    .with_no_client_auth();
+                Some(tokio_postgres_rustls::MakeRustlsConnect::new(rustls_config))
+            }
+            _ => None,
+        };
+
         let pool = loop {
-            match cfg.create_pool(None, NoTls) {
+            let result = if let Some(ref tls) = connector {
+                cfg.create_pool(None, tls.clone())
+            } else {
+                cfg.create_pool(None, NoTls)
+            };
+
+            match result {
                 Ok(pool) => break pool,
                 Err(e) => {
                     error!("Error creating pool: {}", e);
@@ -534,6 +564,9 @@ impl PostgresDatabaseService {
             num_txs: i32,
             timestamp: i64,
             first_seen: i64,
+            num_blobs: i32,
+            blob_gas_used: i32,
+            excess_blob_gas: i32,
         }
 
         let mut structured_blocks: Vec<BlockParams> = Vec::with_capacity(batch.len());
@@ -556,6 +589,9 @@ impl PostgresDatabaseService {
                 num_txs: item.submission.num_txs() as i32,
                 timestamp: item.submission.timestamp() as i64,
                 first_seen: item.trace.receive as i64,
+                num_blobs: item.submission.num_blobs() as i32,
+                blob_gas_used: item.submission.blob_gas_used() as i32,
+                excess_blob_gas: item.submission.excess_blob_gas() as i32,
             });
         }
 
@@ -576,12 +612,15 @@ impl PostgresDatabaseService {
             params.push(&blk.num_txs);
             params.push(&blk.timestamp);
             params.push(&blk.first_seen);
+            params.push(&blk.num_blobs);
+            params.push(&blk.blob_gas_used);
+            params.push(&blk.excess_blob_gas);
         }
 
         // Build and execute INSERT for block_submission
         let num_cols = BLOCK_SUBMISSION_FIELD_COUNT;
         let mut sql = String::from(
-            "INSERT INTO block_submission (block_number, slot_number, parent_hash, block_hash, builder_pubkey, proposer_pubkey, proposer_fee_recipient, gas_limit, gas_used, value, num_txs, timestamp, first_seen) VALUES "
+            "INSERT INTO block_submission (block_number, slot_number, parent_hash, block_hash, builder_pubkey, proposer_pubkey, proposer_fee_recipient, gas_limit, gas_used, value, num_txs, timestamp, first_seen, num_blobs, blob_gas_used, excess_blob_gas) VALUES "
         );
         let clauses: Vec<String> = (0..structured_blocks.len())
             .map(|i| {
@@ -1871,9 +1910,12 @@ impl DatabaseService for PostgresDatabaseService {
                 block_submission.gas_limit              gas_limit,
                 block_submission.gas_used               gas_used,
                 block_submission.block_number           block_number,
-                block_submission.num_txs                num_txs
-            FROM
-                block_submission
+                block_submission.num_txs                num_txs,
+                block_submission.num_blobs              num_blobs,
+                block_submission.blob_gas_used          blob_gas_used,
+                block_submission.excess_blob_gas        excess_blob_gas
+            FROM 
+                delivered_payload 
             INNER JOIN
                 delivered_payload ON block_submission.block_number = delivered_payload.block_number and block_submission.block_hash = delivered_payload.block_hash
         ",
@@ -2217,4 +2259,23 @@ impl DatabaseService for PostgresDatabaseService {
             Err(errors)
         }
     }
+}
+
+fn root_certs(cert_file_pem: Option<&str>) -> Result<RootCertStore, Box<dyn std::error::Error>> {
+    let mut roots = rustls::RootCertStore::empty();
+
+    // Load platform certificates (optional, but recommended)
+    for cert in rustls_native_certs::load_native_certs().expect("could not load platform certs") {
+        roots.add(cert)?;
+    }
+
+    // Load a self-signed cert
+    if let Some(cert_file_pem) = cert_file_pem {
+        debug!("found custom cert");
+        let cert_der_pem = CertificateDer::from_pem_file(cert_file_pem)?;
+        roots.add(cert_der_pem)?
+    }
+
+    debug!("total certs in store: {}", roots.len());
+    Ok(roots)
 }

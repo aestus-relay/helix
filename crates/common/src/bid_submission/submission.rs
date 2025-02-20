@@ -202,4 +202,24 @@ impl BidSubmission for SignedBidSubmission {
             SignedBidSubmission::Electra(_) => helix_types::ForkName::Electra,
         }
     }
+
+    fn num_blobs(&self) -> u64 {
+        match self {
+            SignedBidSubmission::Electra(signed_bid_submission) => {
+                signed_bid_submission.blobs_bundle.blobs.len() as u64
+            }
+        }
+    }
+
+    fn blob_gas_used(&self) -> u64 {
+        match self {
+            SignedBidSubmission::Electra(bid) => bid.execution_payload.blob_gas_used,
+        }
+    }
+
+    fn excess_blob_gas(&self) -> u64 {
+        match self {
+            SignedBidSubmission::Electra(bid) => bid.execution_payload.excess_blob_gas,
+        }
+    }
 }
