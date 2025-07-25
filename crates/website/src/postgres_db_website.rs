@@ -15,12 +15,9 @@ use helix_types::BidTrace;
 
 use crate::models::DeliveredPayload;
 
-#[async_trait]
+#[async_trait]#[async_trait]
 pub trait WebsiteDatabaseService: Send + Sync {
-    async fn get_recent_delivered_payloads(
-        &self,
-        limit: i64,
-    ) -> Result<Vec<DeliveredPayload>, DatabaseError>;
+    async fn get_recent_delivered_payloads(&self, limit: i64) -> Result<Vec<DeliveredPayload>, DatabaseError>;
     async fn get_num_network_validators(&self) -> Result<i64, DatabaseError>;
     async fn get_num_registered_validators(&self) -> Result<i64, DatabaseError>;
     async fn get_num_delivered_payloads(&self) -> Result<i64, DatabaseError>;
@@ -48,17 +45,17 @@ impl FromRow for DeliveredPayload {
             },
             block_number: parse_i32_to_u64(row.get::<&str, i32>("block_number"))?,
             num_txs: parse_i32_to_usize(row.get::<&str, i32>("num_txs"))?,
-            epoch: parse_i32_to_u64(row.get::<&str, i32>("slot_number"))? / 32, //Calculate directly
+            num_blobs: parse_i32_to_usize(row.get::<&str, i32>("num_blobs"))?,
+            blob_gas_used: parse_i32_to_u64(row.get::<&str, i32>("blob_gas_used"))?,
+            excess_blob_gas: parse_i32_to_u64(row.get::<&str, i32>("excess_blob_gas"))?,
+            epoch: parse_i32_to_u64(row.get::<&str, i32>("slot_number"))?/32 //Calculate directly
         })
     }
 }
 
 #[async_trait]
 impl WebsiteDatabaseService for PostgresDatabaseService {
-    async fn get_recent_delivered_payloads(
-        &self,
-        limit: i64,
-    ) -> Result<Vec<DeliveredPayload>, DatabaseError> {
+    async fn get_recent_delivered_payloads(&self, limit: i64) -> Result<Vec<DeliveredPayload>, DatabaseError> {
         let query = "
         SELECT
             block_submission.slot_number,
@@ -71,7 +68,10 @@ impl WebsiteDatabaseService for PostgresDatabaseService {
             block_submission.gas_used,
             block_submission.value,
             block_submission.num_txs,
-            block_submission.block_number
+            block_submission.block_number,
+            block_submission.num_blobs,
+            block_submission.blob_gas_used,
+            block_submission.excess_blob_gas
         FROM
             delivered_payload
         INNER JOIN
