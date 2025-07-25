@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width">
 
-    <title>Aestus MEV-Boost Relay - {{ network|capitalize }}</title>
+    <title>Aestus MEV-Boost Relay - {{ network }}</title>
     <meta name="description" content="Aestus Helix Relay enables Ethereum proof-of-stake validators access to blocks with maximal extractable value">
 
     <link data-react-helmet=true rel="shortcut icon" href=https://aestus.live/favicon.ico>
@@ -151,7 +151,7 @@
         </a>
 
         <h1>
-            Aestus Helix Relay - {{ network|capitalize }}
+            Aestus Helix Relay - {{ network }}
         </h1>
 
         {% if relay_url != "" %}
@@ -168,6 +168,7 @@
         <p>Configuration:</p>
         <ul>
             <li>Relay Pubkey: <tt>{{ relay_pubkey }}</tt></li>
+            <li>Electra fork version: <tt>{{ electra_fork_version }}</tt></li>
             <li>Capella fork version: <tt>{{ capella_fork_version }}</tt></li>
             <li>Bellatrix fork version: <tt>{{ bellatrix_fork_version }}</tt></li>
             <li>Genesis fork version: <tt>{{ genesis_fork_version }}</tt></li>
@@ -193,11 +194,11 @@
                     <tbody>
                     <tr title="Currently active or pending validators on Ethereum PoS">
                         <td>Validators active or in queue</td>
-                        <td>{{ network_validators }}</td>
+                        <td>{{ network_validators|pretty_int }}</td>
                     </tr>
                     <tr title="Validators who have sent a registration at least once">
                         <td> Registered Validators (all time)</td>
-                        <td>{{ registered_validators }}</td>
+                        <td>{{ registered_validators|pretty_int }}</td>
                     </tr>
                     <tr title="Last slot delivered through this relay">
                         <td>Latest slot</td>
@@ -248,6 +249,7 @@
                     </a>
                 </th>
                 <th>Num txs</th>
+                <th>Blobs</th>
                 <th>Block hash</th>
                 <th></th>
             </tr>
@@ -262,6 +264,9 @@
                 <td>{{ payload.block_number|pretty_int }}</td>
                 <td>{{ payload.bid_trace.value|wei_to_eth }}</td>
                 <td>{{ payload.num_txs }}</td>
+                <td>
+                    <div title="Blob Gas Used: {{ payload.blob_gas_used }}">{{ payload.num_blobs }}</div>
+                </td>
                 <td>{{ payload.bid_trace.block_hash }}</td>
                 <td>
                     <div class="icons-container">
