@@ -37,9 +37,10 @@ pub struct IndexTemplate {
     pub link_beaconchain: String,
     pub link_etherscan: String,
     pub link_data_api: String,
+    pub electra_fork_version: String,
     pub capella_fork_version: String,
     pub bellatrix_fork_version: String,
     pub genesis_fork_version: String,
     pub genesis_validators_root: String,
-    pub builder_signing_domain: String, /* pub beacon_proposer_signing_domain: String //May be irrelevant? */
+    pub builder_signing_domain: String
 }

@@ -237,6 +237,9 @@ impl WebsiteService {
             capella_fork_version: alloy_primitives::hex::encode(
                 state.chain_info.context.capella_fork_version,
             ),
+            electra_fork_version: alloy_primitives::hex::encode(
+                state.chain_info.context.electra_fork_version,
+            ),
             bellatrix_fork_version: alloy_primitives::hex::encode(
                 state.chain_info.context.bellatrix_fork_version,
             ),
