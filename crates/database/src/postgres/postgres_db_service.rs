@@ -58,7 +58,7 @@ struct PendingHeaderSubmissionValue {
     pub tx_count: u32,
 }
 
-const BLOCK_SUBMISSION_FIELD_COUNT: usize = 13;
+const BLOCK_SUBMISSION_FIELD_COUNT: usize = 16;
 const HEADER_SUBMISSION_FIELD_COUNT: usize = 13;
 
 struct RegistrationParams<'a> {
