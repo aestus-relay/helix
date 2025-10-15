@@ -54,6 +54,9 @@ pub struct RelayConfig {
     pub is_registration_instance: bool,
     pub admin_token: String,
     #[serde(default)]
+    pub is_local_dev: bool,
+    #[serde(default)]
+    pub k8s_leader_election: K8sLeaderElectionConfig,
     is_local_dev: bool,
     /// Cores configuration, recommended to be set for production use
     pub cores: CoresConfig,
@@ -197,6 +200,61 @@ pub struct BlockMergingConfig {
     pub max_merged_bid_age_ms: u64,
 }
 
+#[derive(Serialize, Deserialize, Clone)]
+pub struct K8sLeaderElectionConfig {
+    /// Enable Kubernetes leader election
+    #[serde(default = "default_bool::<false>")]
+    pub enabled: bool,
+    /// Name of the Lease object in Kubernetes
+    #[serde(default = "default_lease_name")]
+    pub lease_name: String,
+    /// Duration in seconds that the lease is valid (supports fractional seconds, e.g., 1.0)
+    #[serde(default = "default_f64::<1>")]
+    pub lease_duration_secs: f64,
+    /// Time in seconds before lease expiry to renew (leader renewal interval)
+    /// Should be < lease_duration_secs to give leader a head start (supports fractional, e.g., 0.5)
+    #[serde(default = "default_renew_deadline")]
+    pub renew_deadline_secs: f64,
+    /// Interval in seconds between lease acquisition attempts (supports fractional seconds)
+    #[serde(default = "default_f64::<1>")]
+    pub retry_period_secs: f64,
+    /// Timeout in seconds to wait for slot completion during shutdown
+    #[serde(default = "default_u64::<4>")]
+    pub slot_completion_timeout_secs: u64,
+    /// Interval in slots to rotate leadership (None = no rotation, Some(32) = every epoch)
+    #[serde(default = "default_rotation_interval")]
+    pub rotation_interval_slots: Option<u64>,
+}
+
+impl Default for K8sLeaderElectionConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            lease_name: "helix-relay-leader".to_string(),
+            lease_duration_secs: 1.0,
+            renew_deadline_secs: 0.5,
+            retry_period_secs: 1.0,
+            slot_completion_timeout_secs: 4,
+            rotation_interval_slots: Some(32),
+        }
+    }
+}
+
+fn default_rotation_interval() -> Option<u64> {
+    Some(32)
+}
+
+fn default_renew_deadline() -> f64 {
+    // Default to 0.5s to give 0.5s head start when lease_duration is 1s
+    // This prevents race conditions during leader renewal
+    // Formula: renew_deadline should be < lease_duration
+    0.5
+}
+
+fn default_lease_name() -> String {
+    "helix-relay-leader".to_string()
+}
+
 fn default_port() -> u16 {
     5432
 }
@@ -211,6 +269,11 @@ pub const fn default_usize<const U: usize>() -> usize {
 
 pub const fn default_u64<const D: u64>() -> u64 {
     D
+}
+
+// Note: Can't use const generics with f64, so we use integer const and convert
+pub const fn default_f64<const D: u64>() -> f64 {
+    D as f64
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

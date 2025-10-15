@@ -1,0 +1,74 @@
+# Example configuration for Helix with Kubernetes leader election enabled
+# Copy this to config.yml and adjust for your environment
+
+# Instance identifier (optional, will be auto-generated if not set)
+instance_id: "helix-relay-k8s"
+
+# Kubernetes leader election configuration
+k8s_leader_election:
+  enabled: true
+  lease_name: "helix-relay-leader"
+  lease_duration_seconds: 1      # Lease expires after 1 second without renewal
+  renew_deadline_seconds: 0.5    # Leader renews at 0.5s (gives 0.5s head start before followers can steal)
+  retry_period_seconds: 1        # Followers check for expired leases every 1 second
+  slot_completion_timeout_seconds: 4
+  rotation_interval_slots: 32    # Rotate leadership every epoch (~6.4 minutes)
+
+# PostgreSQL configuration
+postgres:
+  hostname: "postgres-service.helix.svc.cluster.local"
+  port: 5432
+  db_name: "helix"
+  user: "helix"
+  password: "${POSTGRES_PASSWORD}"  # Set via environment variable
+  region: 1
+  region_name: "us-east-1"
+
+# Beacon clients
+beacon_clients:
+  - url: "http://beacon-node-1:5052"
+  - url: "http://beacon-node-2:5052"
+
+# Simulators
+simulators:
+  - url: "http://simulator-service:8080"
+
+# Network configuration
+network_config:
+  name: "mainnet"
+
+# Router configuration
+router_config:
+  enabled_routes:
+    - route: "All"
+  shutdown_delay_ms: 0  # K8s leader election handles graceful shutdown
+
+# Logging
+logging:
+  log_level: "info"
+  dir_path: "/var/log/helix"
+
+# Validator preferences (defaults)
+validator_preferences:
+  filtering: "Global"
+  header_delay: false
+
+# Timing game configuration
+timing_game_config:
+  max_header_delay_ms: 650
+  latest_header_delay_ms_in_slot: 2000
+  default_client_latency_ms: 150
+
+# Target propagation duration for get_payload
+target_get_payload_propagation_duration_ms: 1000
+
+# Block merging (optional)
+block_merging_config:
+  is_enabled: false
+  max_merged_bid_age_ms: 250
+
+# Other settings
+housekeeper: true
+admin_token: "${ADMIN_TOKEN}"
+is_local_dev: false
+

@@ -115,6 +115,34 @@ async fn run(config: RelayConfig, keypair: BlsKeypair) -> eyre::Result<()> {
     .map_err(|e| eyre!("housekeeper init: {e}"))?;
 
     let terminating = Arc::new(AtomicBool::default());
+    let is_leader = Arc::new(AtomicBool::default());
+
+    // Initialize K8s lease manager FIRST (before moving auctioneer/current_slot_info)
+    let lease_manager = if config.k8s_leader_election.enabled {
+        match helix_k8s::LeaseManager::new(
+            config.k8s_leader_election.clone(),
+            is_leader.clone(),
+            &current_slot_info,
+            &auctioneer,
+        )
+        .await
+        {
+            Ok(manager) => {
+                info!("K8s leader election enabled, starting lease manager");
+                manager.start().await?;
+                Some(manager)
+            }
+            Err(err) => {
+                error!(%err, "Failed to initialize K8s lease manager");
+                return Err(eyre!("K8s lease manager init failed: {err}"));
+            }
+        }
+    } else {
+        // Not using K8s leader election, assume we're the leader
+        info!("K8s leader election disabled, running as single leader");
+        is_leader.store(true, Ordering::Relaxed);
+        None
+    };
 
     start_admin_service(local_cache.clone(), &config);
 
@@ -129,6 +157,7 @@ async fn run(config: RelayConfig, keypair: BlsKeypair) -> eyre::Result<()> {
         Arc::new(DefaultApiProvider {}),
         known_validators_loaded,
         terminating.clone(),
+        sorter_tx,
         top_bid_tx,
         slot_data_rx,
         relay_network_api.api(),
@@ -152,12 +181,17 @@ async fn run(config: RelayConfig, keypair: BlsKeypair) -> eyre::Result<()> {
     // Set terminating flag.
     terminating.store(true, Ordering::Relaxed);
 
-    if termination_grace_period != 0 {
-        // Wait for the grace period to expire before exiting.
-        tracing::info!("Pausing for {termination_grace_period}ms before exit");
+    // If using K8s leader election, perform graceful shutdown
+    if let Some(manager) = lease_manager {
+        info!("Performing slot-aware graceful shutdown");
+        manager.graceful_shutdown().await?;
+    } else if termination_grace_period != 0 {
+        // Standard graceful shutdown (no K8s)
+        info!("Pausing for {termination_grace_period}ms before exit");
         tokio::time::sleep(Duration::from_millis(termination_grace_period)).await;
     }
 
+    info!("Shutdown complete");
     Ok(())
 }
 

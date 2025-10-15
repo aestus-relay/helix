@@ -15,6 +15,7 @@ helix-common.workspace = true
 helix-database.workspace = true
 helix-housekeeper.workspace = true
 helix-network.workspace = true
+helix-k8s = { path = "../../crates/k8s" }
 helix-types.workspace = true
 helix-website.workspace = true
 tokio.workspace = true

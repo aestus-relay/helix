@@ -52,6 +52,8 @@ mod tests {
             password: "password".to_string(),
             region: REGION,
             region_name: REGION_NAME.to_string(),
+            ssl_mode: Some("prefer".to_string()),
+            cert_file_pem: Some("tests/cert.pem".to_string()),
         }
     }
 
