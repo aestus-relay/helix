@@ -49,6 +49,8 @@ pub struct RelayConfig {
     pub discord_webhook_url: Option<Url>,
     #[serde(default)]
     pub alerts_config: Option<AlertsConfig>,
+    #[serde(default = "default_bool::<true>")]
+    pub header_ws_auth: bool,
     pub inclusion_list: Option<InclusionListConfig>,
     pub is_submission_instance: bool,
     pub is_registration_instance: bool,

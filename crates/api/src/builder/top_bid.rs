@@ -22,12 +22,15 @@ impl<A: Api> BuilderApi<A> {
         headers: HeaderMap,
         ws: WebSocketUpgrade,
     ) -> Result<impl IntoResponse, BuilderApiError> {
-        let Some(api_key) = headers.get(HEADER_API_KEY) else {
-            return Err(BuilderApiError::InvalidApiKey);
-        };
+        // Only check API key if header_ws_auth is enabled
+        if api.relay_config.header_ws_auth {
+            let Some(api_key) = headers.get(HEADER_API_KEY) else {
+                return Err(BuilderApiError::InvalidApiKey);
+            };
 
-        if !api.local_cache.contains_api_key(api_key) {
-            return Err(BuilderApiError::InvalidApiKey);
+            if !api.auctioneer.contains_api_key(api_key) {
+                return Err(BuilderApiError::InvalidApiKey);
+            }
         }
 
         let sub = api.top_bid_tx.subscribe();
