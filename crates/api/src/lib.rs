@@ -21,40 +21,6 @@ mod grpc {
     include!(concat!(env!("OUT_DIR"), "/gossip.rs"));
 }
 
-pub fn start_api_service<A: Api>(
-    config: RelayConfig,
-    db: Arc<A::DatabaseService>,
-    auctioneer: Arc<LocalCache>,
-    chain_info: Arc<ChainInfo>,
-    relay_signing_context: Arc<RelaySigningContext>,
-    multi_beacon_client: Arc<MultiBeaconClient>,
-    metadata_provider: Arc<A::MetadataProvider>,
-    current_slot_info: CurrentSlotInfo,
-    known_validators_loaded: Arc<AtomicBool>,
-    terminating: Arc<AtomicBool>,
-    is_leader: Arc<AtomicBool>,
-    sorter_tx: crossbeam_channel::Sender<BidSorterMessage>,
-    top_bid_tx: tokio::sync::broadcast::Sender<Bytes>,
-    shared_best_header: BestGetHeader,
-) {
-    tokio::spawn(run_api_service::<A>(
-        config.clone(),
-        db,
-        auctioneer,
-        current_slot_info,
-        chain_info,
-        relay_signing_context,
-        multi_beacon_client,
-        metadata_provider,
-        known_validators_loaded,
-        terminating,
-        is_leader,
-        sorter_tx,
-        top_bid_tx,
-        shared_best_header,
-    ));
-}
-
 pub fn start_admin_service(auctioneer: Arc<LocalCache>, config: &RelayConfig) {
     tokio::spawn(admin_service::run_admin_service(auctioneer, config.clone()));
 }

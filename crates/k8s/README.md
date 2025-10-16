@@ -76,10 +76,14 @@ Core orchestration of the leader election lifecycle:
 
 Ensures leadership transitions occur at safe boundaries to prevent mid-slot disruptions:
 
-- **Transition safety**: Waits for `get_payload` delivery before allowing leadership change
-- **Timeout protection**: Prevents infinite waits if proposer doesn't call (empty slots)
+- **Slot advancement detection**: Waits for the slot to advance beyond the initial slot
+- **Auctioneer state tracking**: Slot advancement indicates the auctioneer called `on_new_slot()`, which cleans up all previous slot state
+- **Safe transition guarantee**: Whether payload was delivered, slot was empty, or missed - slot advancement = safe to transition
+- **Timeout protection**: 4-second safety timeout prevents infinite waits if housekeeper is delayed
 - **Multiple triggers**: Handles shutdown signals, voluntary rotation, and unexpected lease loss
-- **Bid protection**: Ensures proposers who received headers can successfully call `get_payload`
+- **Bid protection**: Ensures proposers who received headers can successfully call `get_payload` before leadership changes
+
+The logic leverages the auctioneer's internal state machine: when it transitions from `Broadcasting`/`Sorting` to `Slot` state (triggered by a new slot event), it has cleaned up all previous slot data, making it safe to transfer leadership.
 
 ### Health Endpoint (`health.rs`)
 

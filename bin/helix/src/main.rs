@@ -117,13 +117,13 @@ async fn run(config: RelayConfig, keypair: BlsKeypair) -> eyre::Result<()> {
     let terminating = Arc::new(AtomicBool::default());
     let is_leader = Arc::new(AtomicBool::default());
 
-    // Initialize K8s lease manager FIRST (before moving auctioneer/current_slot_info)
+    // Initialize K8s lease manager before moving local_cache/current_slot_info
     let lease_manager = if config.k8s_leader_election.enabled {
         match helix_k8s::LeaseManager::new(
             config.k8s_leader_election.clone(),
             is_leader.clone(),
             &current_slot_info,
-            &auctioneer,
+            &local_cache,
         )
         .await
         {
@@ -157,7 +157,7 @@ async fn run(config: RelayConfig, keypair: BlsKeypair) -> eyre::Result<()> {
         Arc::new(DefaultApiProvider {}),
         known_validators_loaded,
         terminating.clone(),
-        sorter_tx,
+        is_leader,
         top_bid_tx,
         slot_data_rx,
         relay_network_api.api(),

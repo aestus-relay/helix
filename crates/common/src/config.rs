@@ -57,7 +57,6 @@ pub struct RelayConfig {
     pub is_local_dev: bool,
     #[serde(default)]
     pub k8s_leader_election: K8sLeaderElectionConfig,
-    is_local_dev: bool,
     /// Cores configuration, recommended to be set for production use
     pub cores: CoresConfig,
 }
@@ -82,6 +81,7 @@ impl RelayConfig {
             primev_config: Default::default(),
             discord_webhook_url: Default::default(),
             alerts_config: Default::default(),
+            k8s_leader_election: Default::default(),
             inclusion_list: Default::default(),
             is_submission_instance: Default::default(),
             is_registration_instance: Default::default(),

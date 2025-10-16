@@ -42,7 +42,6 @@ pub async fn start_api_service<A: Api>(
     known_validators_loaded: Arc<AtomicBool>,
     terminating: Arc<AtomicBool>,
     is_leader: Arc<AtomicBool>,
-    sorter_tx: crossbeam_channel::Sender<BidSorterMessage>,
     top_bid_tx: tokio::sync::broadcast::Sender<Bytes>,
     slot_data_rx: crossbeam_channel::Receiver<SlotData>,
     relay_network_api: RelayNetworkApi,
