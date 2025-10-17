@@ -81,6 +81,7 @@ impl RelayConfig {
             primev_config: Default::default(),
             discord_webhook_url: Default::default(),
             alerts_config: Default::default(),
+            header_ws_auth: Default::default(),
             inclusion_list: Default::default(),
             is_submission_instance: Default::default(),
             is_registration_instance: Default::default(),
