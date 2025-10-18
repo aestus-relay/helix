@@ -273,12 +273,19 @@ impl ChainEventUpdater {
             payload_attributes: event.data.payload_attributes,
         };
 
-        let _ = self.auctioneer_handle.try_send(SlotData {
-            bid_slot: event.data.proposal_slot,
-            registration_data: None,
-            payload_attributes: Some(update.clone()),
-            il: None,
-        });
+        // Only send to auctioneer if payload attributes are for the immediate next slot
+        // This prevents premature slot transitions when beacon nodes send payload attributes
+        // early (typically 10-15 seconds before the slot starts).
+        // For future slots (N+2, N+3, etc), we cache the attributes and send them later
+        // when process_slot() advances the head and fetches cached attributes.
+        if event.data.proposal_slot.as_u64() <= self.head_slot + 1 {
+            let _ = self.auctioneer_handle.try_send(SlotData {
+                bid_slot: event.data.proposal_slot,
+                registration_data: None,
+                payload_attributes: Some(update.clone()),
+                il: None,
+            });
+        }
 
         self.curr_slot_info.handle_new_payload_attributes(update);
     }
