@@ -7,24 +7,19 @@ postgres:
   password: password
   region: 0
   region_name: "LOCAL"
-redis:
-  url: redis://localhost:6379
 broadcasters:
   - !BeaconClient
     url: http://localhost:5052
-    gossip_blobs_enabled: false
 simulators:
   - url: http://localhost:8545
 beacon_clients:
   - url: http://localhost:5052
-    gossip_blobs_enabled: false
 relays: []
 builders: []
 validator_preferences:
   filtering: regional
   trusted_builders: null
   header_delay: true
-  gossip_blobs: false
 router_config:
   enabled_routes:
     - route: GetValidators
@@ -39,12 +34,20 @@ router_config:
     - route: ProposerPayloadDelivered
     - route: RegisterValidators
     - route: Status
+block_merging_config:
+  is_enabled: false
+  max_merged_bid_age_ms: 250
 target_get_payload_propagation_duration_ms: 0
 primev_config: null
-skip_floor_bid_builder_pubkeys: []
 discord_webhook_url: null
+is_submission_instance: true
+is_registration_instance: true
 logging: !File
   dir_path: /app/logs
   file_name: titan_relay.log
   otlp_server: http://localhost:4317
-  
+cores:
+  auctioneer: 1
+  sub_workers: [2, 3, 4, 5]
+  reg_workers: [6, 7, 8, 9]
+  tokio: [10, 11, 12, 13]

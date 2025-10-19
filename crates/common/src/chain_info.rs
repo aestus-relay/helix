@@ -2,10 +2,10 @@ use std::time::Duration;
 
 use alloy_primitives::B256;
 use helix_types::{
-    custom_slot_clock, duration_into_slot, holesky_slot_clock, holesky_spec, hoodi_slot_clock,
-    hoodi_spec, mainnet_slot_clock, sepolia_slot_clock, sepolia_spec, spec_from_file, ChainSpec,
-    EthSpec, ForkName, MainnetEthSpec, Slot, SlotClock, SlotClockTrait, HOLESKY_GENESIS_TIME,
-    HOODI_GENESIS_TIME, MAINNET_GENESIS_TIME, SEPOLIA_GENESIS_TIME,
+    ChainSpec, EthSpec, ForkName, HOLESKY_GENESIS_TIME, HOODI_GENESIS_TIME, MAINNET_GENESIS_TIME,
+    MainnetEthSpec, SEPOLIA_GENESIS_TIME, Slot, SlotClock, SlotClockTrait, custom_slot_clock,
+    duration_into_slot, holesky_slot_clock, holesky_spec, hoodi_slot_clock, hoodi_spec,
+    mainnet_slot_clock, sepolia_slot_clock, sepolia_spec, spec_from_file,
 };
 
 pub(crate) const MAINNET_GENESIS_VALIDATOR_ROOT: [u8; 32] = [
@@ -22,7 +22,7 @@ pub(crate) const HOLESKY_GENESIS_VALIDATOR_ROOT: [u8; 32] = [
 ];
 
 pub(crate) const HOODI_GENESIS_VALIDATOR_ROOT: [u8; 32] = [
-    33, 47, 19, 252, 77, 240, 120, 182, 203, 125, 178, 40, 241, 200, 48, 117, 102, 220, 236, 249, 
+    33, 47, 19, 252, 77, 240, 120, 182, 203, 125, 178, 40, 241, 200, 48, 117, 102, 220, 236, 249,
     0, 134, 116, 1, 169, 32, 35, 215, 186, 153, 203, 95,
 ];
 
@@ -59,39 +59,59 @@ pub struct ChainInfo {
     pub clock: SlotClock,
     // TODO: remove?
     pub genesis_time_in_secs: u64,
+    pub builder_domain: B256,
 }
 
 impl ChainInfo {
     pub fn for_mainnet() -> Self {
         let context = ChainSpec::mainnet();
+        let builder_domain = context.get_builder_domain();
         Self {
             network: Network::Mainnet,
             genesis_validators_root: B256::from(MAINNET_GENESIS_VALIDATOR_ROOT),
             clock: mainnet_slot_clock(context.seconds_per_slot),
             context,
             genesis_time_in_secs: MAINNET_GENESIS_TIME,
+            builder_domain,
         }
     }
 
     pub fn for_sepolia() -> Self {
         let context = sepolia_spec();
+        let builder_domain = context.get_builder_domain();
         Self {
             network: Network::Sepolia,
             genesis_validators_root: B256::from(SEPOLIA_GENESIS_VALIDATOR_ROOT),
             clock: sepolia_slot_clock(context.seconds_per_slot),
             context,
             genesis_time_in_secs: SEPOLIA_GENESIS_TIME,
+            builder_domain,
         }
     }
 
     pub fn for_holesky() -> Self {
         let context = holesky_spec();
+        let builder_domain = context.get_builder_domain();
         Self {
             network: Network::Holesky,
             genesis_validators_root: B256::from(HOLESKY_GENESIS_VALIDATOR_ROOT),
             clock: holesky_slot_clock(context.seconds_per_slot),
             context,
             genesis_time_in_secs: HOLESKY_GENESIS_TIME,
+            builder_domain,
+        }
+    }
+
+    pub fn for_hoodi() -> Self {
+        let context = hoodi_spec();
+        let builder_domain = context.get_builder_domain();
+        Self {
+            network: Network::Hoodi,
+            genesis_validators_root: B256::from(HOODI_GENESIS_VALIDATOR_ROOT),
+            clock: hoodi_slot_clock(context.seconds_per_slot),
+            context,
+            genesis_time_in_secs: HOODI_GENESIS_TIME,
+            builder_domain,
         }
     }
 
@@ -114,13 +134,24 @@ impl ChainInfo {
         let context = spec_from_file(&config);
         let network = Network::Custom(config.clone());
         let clock = custom_slot_clock(genesis_time_in_secs, context.seconds_per_slot);
+        let builder_domain = context.get_builder_domain();
+        Self {
+            network,
+            genesis_validators_root,
+            context,
+            clock,
+            genesis_time_in_secs,
+            builder_domain,
+        }
+    }
 
-        Self { network, genesis_validators_root, context, clock, genesis_time_in_secs }
+    pub fn fork_at_slot(&self, slot: Slot) -> ForkName {
+        self.context.fork_name_at_slot::<MainnetEthSpec>(slot)
     }
 
     pub fn current_fork_name(&self) -> ForkName {
         let current_slot = self.clock.now().unwrap();
-        self.context.fork_name_at_slot::<MainnetEthSpec>(current_slot)
+        self.fork_at_slot(current_slot)
     }
 
     pub fn seconds_per_slot(&self) -> u64 {
@@ -145,5 +176,10 @@ impl ChainInfo {
     pub fn current_slot(&self) -> Slot {
         // safe since we're past genesis slot and UNIX_EPOCH
         self.clock.now().unwrap()
+    }
+
+    pub fn max_blobs_per_block(&self) -> usize {
+        let epoch = self.current_slot().epoch(self.slots_per_epoch());
+        self.context.max_blobs_per_block(epoch) as usize
     }
 }

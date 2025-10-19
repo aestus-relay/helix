@@ -7,7 +7,7 @@ use crate::Slot;
 pub const MAINNET_GENESIS_TIME: u64 = 1606824023;
 pub const SEPOLIA_GENESIS_TIME: u64 = 1655733600;
 pub const HOLESKY_GENESIS_TIME: u64 = 1695902400;
-pub const HOODI_GENESIS_TIME: u64 = 1742212800;
+pub const HOODI_GENESIS_TIME: u64 = 1742213400;
 
 pub fn mainnet_slot_clock(seconds_per_slot: u64) -> SlotClock {
     SlotClock::new(
@@ -70,7 +70,7 @@ mod tests {
             let dur_1 = clock.millis_from_current_slot_start().unwrap().as_nanos() as i128;
             let dur_2 = duration_into_slot(&clock, slot).unwrap().as_nanos() as i128;
             let delta = dur_1 - dur_2;
-            assert!(delta.abs() < 1_000_000, "clock delta above 1ms: {}", delta);
+            assert!(delta.abs() < 1_000_000, "clock delta above 1ms: {delta}");
 
             sleep(Duration::from_millis(10));
         }

@@ -1,96 +1,101 @@
 [workspace]
-members = [
-  "bin/helix",
-
-  "crates/api",
-  "crates/beacon",
-  "crates/common",
-  "crates/database",
-  "crates/datastore",
-  "crates/housekeeper",
-  "crates/types",
-  "crates/website",
-]
+default-members = ["crates/relay"]
+members = ["crates/common", "crates/relay", "crates/simulator", "crates/types"]
 resolver = "2"
 
 [workspace.package]
-edition = "2021"
+edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/gattaca-com/helix"
-rust-version = "1.85.0"
+rust-version = "1.90.0"
 version = "0.0.1"
 
 [workspace.dependencies]
-alloy-consensus = { version = "0.12", features = ["k256"] }
-alloy-eips = { version = "0.12", features = ["kzg"] }
-alloy-primitives = { version = "0.8.25", features = ["getrandom", "k256"] }
-alloy-rlp = "0.3.9"
-alloy-serde = "0.12.0"
-askama = "0.12"
+alloy-consensus = { version = "1.0.30", default-features = false, features = ["k256"] }
+alloy-eips = { version = "1.0.30", default-features = false, features = ["kzg"] }
+alloy-primitives = { version = "1.3.1", features = ["getrandom", "k256"] }
+alloy-rlp = { version = "0.3.12", default-features = false, features = ["core-net"] }
+alloy-rpc-types = { version = "1.0.30", default-features = false, features = ["beacon", "engine", "ssz"] }
+alloy-serde = "1.0.30"
+alloy-signer = { version = "1.0.37" }
+alloy-signer-local = { version = "1.0.37" }
+alloy-sol-types = { version = "1.3.1", default-features = false }
+askama = "0.12.0"
 async-trait = "0.1"
-auto_impl = "1.0.1"
 axum = { version = "0.8", features = ["matched-path", "ws"] }
 backtrace = "0.3.69"
-bitflags = "2.8.0"
+blst = { version = "0.3.16", features = ["no-threads"] }
 bytes = "1.10"
-cbor4ii = { version = "1.0.0", features = ["serde1"] }
-clap = { version = "4.2.7", features = ["derive"] }
+clap = { version = "4.5", features = ["derive"] }
+core_affinity = "0.8.3"
+criterion = "0.7.0"
+crossbeam-channel = "0.5.15"
 dashmap = { version = "5.5.3", features = [] }
 deadpool-postgres = "0.11.0"
-deadpool-redis = { version = "0.12.0", features = ["rt_tokio_1"] }
-ethereum_serde_utils = "0.7"
-ethereum_ssz = "0.8"
-ethereum_ssz_derive = "0.8"
+derive_more = { version = "2", default-features = false, features = ["full"] }
+ethereum_serde_utils = "0.8"
+ethereum_ssz = "0.9"
+ethereum_ssz_derive = "0.9"
 ethers = "2.0.14"
 eyre = "0.6.12"
-fiber = { git = "https://github.com/chainbound/fiber-rs.git", tag = "v0.8.0" }
 flate2 = "1.0"
 futures = "0.3"
 futures-util = { version = "0.3", features = ["compat"] }
-helix-api = { path = "./crates/api" }
-helix-beacon = { path = "./crates/beacon" }
 helix-common = { path = "crates/common" }
-helix-database = { path = "./crates/database" }
-helix-datastore = { path = "./crates/datastore" }
-helix-housekeeper = { path = "./crates/housekeeper" }
 helix-types = { path = "./crates/types" }
-helix-website = { path = "./crates/website" }
-http = "1.0.0"
+http = "1.0"
+http-body = "1.0"
+http-body-util = "0.1.3"
 httpmock = "0.7.0"
 hyper = "1.1.0"
+jsonrpsee = { version = "0.26.0", features = ["macros", "server"] }
 lazy_static = "1.5.0"
-lh-bls = { package = "bls", git = "https://github.com/ltitanb/lighthouse", rev = "304b026ea0b5da12507e1410e8dae2b28f9db812" }
-lh-eth2 = { package = "eth2", git = "https://github.com/ltitanb/lighthouse", rev = "304b026ea0b5da12507e1410e8dae2b28f9db812" }
-lh-kzg = { package = "kzg", git = "https://github.com/ltitanb/lighthouse", rev = "304b026ea0b5da12507e1410e8dae2b28f9db812" }
-lh-slot-clock = { package = "slot_clock", git = "https://github.com/ltitanb/lighthouse", rev = "304b026ea0b5da12507e1410e8dae2b28f9db812" }
-lh-test-random = { package = "test_random_derive", git = "https://github.com/ltitanb/lighthouse", rev = "304b026ea0b5da12507e1410e8dae2b28f9db812" }
-lh-types = { package = "types", git = "https://github.com/ltitanb/lighthouse", rev = "304b026ea0b5da12507e1410e8dae2b28f9db812" }
+lh-bls = { package = "bls", git = "https://github.com/sigp/lighthouse", rev = "e5b4983d6baf85770fe4539a565d8a2dd462bc53" }
+lh-eth2 = { package = "eth2", git = "https://github.com/sigp/lighthouse", rev = "e5b4983d6baf85770fe4539a565d8a2dd462bc53" }
+lh-kzg = { package = "kzg", git = "https://github.com/sigp/lighthouse", rev = "e5b4983d6baf85770fe4539a565d8a2dd462bc53" }
+lh-slot-clock = { package = "slot_clock", git = "https://github.com/sigp/lighthouse", rev = "e5b4983d6baf85770fe4539a565d8a2dd462bc53" }
+lh-test-random = { package = "test_random_derive", git = "https://github.com/sigp/lighthouse", rev = "e5b4983d6baf85770fe4539a565d8a2dd462bc53" }
+lh-types = { package = "types", git = "https://github.com/sigp/lighthouse", rev = "e5b4983d6baf85770fe4539a565d8a2dd462bc53" }
+metrics = "0.24.0"
 mockito = "1.1.1"
 moka = { version = "0.12.10", features = ["sync"] }
 num-format = "0.4.4"
+num_cpus = "1.17.0"
 opentelemetry = { version = "0.29", features = ["trace"] }
 opentelemetry-otlp = { version = "0.29", features = ["grpc-tonic", "trace"] }
 opentelemetry_sdk = { version = "0.29", features = ["rt-tokio", "trace"] }
 parking_lot = "0.12"
+pin-project-lite = "0.2.16"
 prometheus = "0.13.4"
 prost = "0.12"
-rand = "0.8"
-redis = { version = "0.23.2", features = ["aio", "tokio-comp"] }
+rand = "0.9.2"
 refinery = { version = "0.8", features = ["tokio-postgres"] }
-reqwest = { version = "0.11.23", features = ["blocking", "json", "native-tls-vendored", "stream"] }
+reqwest = { version = "0.11.23", default-features = false, features = ["blocking", "json", "rustls-tls", "stream"] }
 reqwest-eventsource = "0.5"
+reth-chain-state = { git = "https://github.com/paradigmxyz/reth", tag = "v1.8.2" }
+reth-ethereum = { git = "https://github.com/paradigmxyz/reth", tag = "v1.8.2", features = ["cli", "full"] }
+reth-ethereum-engine-primitives = { git = "https://github.com/paradigmxyz/reth", tag = "v1.8.2" }
+reth-metrics = { git = "https://github.com/paradigmxyz/reth", tag = "v1.8.2" }
+reth-node-builder = { git = "https://github.com/paradigmxyz/reth", tag = "v1.8.2" }
+reth-primitives = { git = "https://github.com/paradigmxyz/reth", tag = "v1.8.2" }
+reth-tasks = { git = "https://github.com/paradigmxyz/reth", tag = "v1.8.2" }
+revm = { version = "29.0.1", default-features = false }
+rustc-hash = "2.1.1"
 serde = { version = "1.0.191", features = ["derive"] }
 serde_json = "1.0.106"
+serde_with = "1.14"
 serde_yaml = "0.9.25"
 serial_test = "1.0.0"
 sha2 = "0.10.8"
-ssz_types = "0.10"
+smallvec = { version = "1.15", features = ["serde"] }
+ssz_types = "0.11"
+teloxide = { version = "0.13", features = ["macros"] }
 thiserror = "1.0.49"
-tikv-jemallocator = { version = "0.5", features = ["profiling"] }
+tikv-jemallocator = { version = "0.6", features = ["profiling"] }
 tokio = { version = "1.43", features = ["full"] }
 tokio-postgres = "0.7.10"
-tokio-tungstenite = "0.16"
-tonic = "0.10"
+tokio-tungstenite = "0.27.0"
+tonic = { version = "0.10", features = ["gzip"] }
 tonic-build = "0.10"
 tower = { version = "0.4.13", features = ["full"] }
 tower-http = { version = "0.5.1", features = ["full"] }
@@ -99,7 +104,12 @@ tracing = "0.1.37"
 tracing-appender = "0.2.2"
 tracing-opentelemetry = "0.30"
 tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
-tree_hash = "0.9"
-tree_hash_derive = "0.9"
+tree_hash = "0.10"
+tree_hash_derive = "0.10"
 url = { version = "2.4", features = ["serde"] }
 uuid = { version = "1.5", features = ["fast-rng", "v4"] }
+zstd = "0.13.3"
+
+[patch.crates-io]
+ethereum_ssz = { git = "https://github.com/sigp/ethereum_ssz", rev = "7aec9c0cdf886f08f15fe9296646c2451356084f" }
+ethereum_ssz_derive = { git = "https://github.com/sigp/ethereum_ssz", rev = "7aec9c0cdf886f08f15fe9296646c2451356084f", package = "ethereum_ssz_derive" }

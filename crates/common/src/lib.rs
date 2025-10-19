@@ -1,13 +1,12 @@
+pub mod alerts;
 pub mod api;
-pub mod beacon_api;
+pub mod api_provider;
 pub mod bid_submission;
 pub mod builder_info;
 pub mod chain_info;
 pub mod config;
-pub mod eth;
-pub mod metadata_provider;
+pub mod local_cache;
 pub mod metrics;
-pub mod pending_block;
 pub mod proposer;
 pub mod signing;
 pub mod simulator;
@@ -19,7 +18,6 @@ pub mod validator_preferences;
 
 pub use builder_info::*;
 pub use config::*;
-pub use eth::*;
 pub use proposer::*;
 pub use traces::*;
 pub use validator::*;

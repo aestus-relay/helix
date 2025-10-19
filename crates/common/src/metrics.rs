@@ -2,25 +2,25 @@ use std::{net::SocketAddr, time::Duration};
 
 use axum::{
     body::Body,
-    http::{header::CONTENT_TYPE, StatusCode},
+    http::{StatusCode, header::CONTENT_TYPE},
     response::{IntoResponse, Response},
     routing::get,
 };
 use eyre::bail;
 use lazy_static::lazy_static;
 use prometheus::{
-    exponential_buckets, register_gauge_vec_with_registry, register_gauge_with_registry,
+    Encoder, Gauge, GaugeVec, Histogram, HistogramTimer, HistogramVec, IntCounter, IntCounterVec,
+    IntGauge, Opts, Registry, TextEncoder, exponential_buckets, linear_buckets,
+    register_gauge_vec_with_registry, register_gauge_with_registry,
     register_histogram_vec_with_registry, register_histogram_with_registry,
-    register_int_counter_vec_with_registry, register_int_counter_with_registry, Encoder, Gauge,
-    GaugeVec, Histogram, HistogramTimer, HistogramVec, IntCounter, IntCounterVec, IntGauge, Opts,
-    Registry, TextEncoder,
+    register_int_counter_vec_with_registry, register_int_counter_with_registry,
 };
 use tokio::net::TcpListener;
 use tracing::{error, info};
 
-use crate::{utils::utcnow_ms, RelayConfig};
+use crate::RelayConfig;
 
-pub fn start_metrics_server(config: &RelayConfig) {
+pub async fn start_metrics_server(config: &RelayConfig) {
     let port =
         std::env::var("METRICS_PORT").map(|s| s.parse().expect("invalid port")).unwrap_or(9500);
     tokio::spawn(MetricsProvider::new(port).run());
@@ -129,6 +129,17 @@ lazy_static! {
     )
     .unwrap();
 
+
+     /// Time spent while reading body in seconds
+     static ref REQUEST_READ_BODY_LATENCY: HistogramVec = register_histogram_vec_with_registry!(
+        "request_body_latency_secs",
+        "Time spent reading body in seconds",
+        &["endpoint", "step"],
+        vec![0.00005, 0.0001, 0.0005, 0.001, 0.0025, 0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 50.0],
+        &RELAY_METRICS_REGISTRY
+    )
+    .unwrap();
+
     /// Pending requests
     static ref REQUEST_PENDING: GaugeVec = register_gauge_vec_with_registry!(
         "request_pending",
@@ -144,6 +155,36 @@ lazy_static! {
         "Size of requests in bytes",
         &["endpoint"],
         exponential_buckets(1000.0, 4.0, 12).unwrap(),
+        &RELAY_METRICS_REGISTRY
+    )
+    .unwrap();
+
+    //////////////// REGISTRATION ////////////////
+    pub static ref REGISTRATIONS_TO_CHECK_COUNT: IntCounter = register_int_counter_with_registry!(
+        "registrations_to_check_count",
+        "Count of registrations to check",
+        &RELAY_METRICS_REGISTRY
+    )
+    .unwrap();
+
+    pub static ref REGISTRATIONS_UNKNOWN: IntCounter = register_int_counter_with_registry!(
+        "registrations_unknown_count",
+        "Count of unknown registrations",
+        &RELAY_METRICS_REGISTRY
+    )
+    .unwrap();
+
+
+    pub static ref REGISTRATIONS_SKIPPED: IntCounter = register_int_counter_with_registry!(
+        "registrations_skipped_count",
+        "Count of registrations skipped",
+        &RELAY_METRICS_REGISTRY
+    )
+    .unwrap();
+
+    pub static ref REGISTRATIONS_INVALID: IntCounter = register_int_counter_with_registry!(
+        "registrations_invalid_count",
+        "Count of invalid registrations",
         &RELAY_METRICS_REGISTRY
     )
     .unwrap();
@@ -168,6 +209,39 @@ lazy_static! {
     static ref SIMULATOR_LATENCY: HistogramVec = register_histogram_vec_with_registry!(
         "sim_latency_secs",
         "Latency of simulations",
+        &["simulator"],
+        vec![0.0005, 0.001, 0.0025, 0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 50.0],
+        &RELAY_METRICS_REGISTRY
+    )
+    .unwrap();
+
+    static ref SIM_MANAGER_COUNT: IntCounterVec = register_int_counter_vec_with_registry!(
+        "sim_manager_count",
+        "Sim manager counts",
+        &["label"],
+        &RELAY_METRICS_REGISTRY
+    )
+    .unwrap();
+
+    static ref SIM_MANAGER_GAUGE: GaugeVec = register_gauge_vec_with_registry!(
+        "sim_manager_gauge",
+        "Sim manager gauges",
+        &["label"],
+        &RELAY_METRICS_REGISTRY
+    )
+    .unwrap();
+
+    static ref BLOCK_MERGE_STATUS: IntCounterVec = register_int_counter_vec_with_registry!(
+        "block_merge_status_total",
+        "Count of block merge statuses",
+        &["is_success"],
+        &RELAY_METRICS_REGISTRY
+    )
+    .unwrap();
+
+    static ref BLOCK_MERGE_LATENCY: HistogramVec = register_histogram_vec_with_registry!(
+        "block_merge_latency_secs",
+        "Latency of block merging",
         &["simulator"],
         vec![0.0005, 0.001, 0.0025, 0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 50.0],
         &RELAY_METRICS_REGISTRY
@@ -268,25 +342,6 @@ lazy_static! {
     )
     .unwrap();
 
-
-    //////////////// REDIS ////////////////
-    static ref REDIS_COUNTS: IntCounterVec = register_int_counter_vec_with_registry!(
-        "redis_count_total",
-        "Count of redis operations",
-        &["endpoint", "is_success"],
-        &RELAY_METRICS_REGISTRY
-    )
-    .unwrap();
-
-    static ref REDIS_LATENCY: HistogramVec = register_histogram_vec_with_registry!(
-        "redis_latency_secs",
-        "Latency of redis operations",
-        &["endpoint"],
-        vec![0.0005, 0.001, 0.0025, 0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 50.0],
-        &RELAY_METRICS_REGISTRY
-    )
-    .unwrap();
-
     pub static ref TASK_COUNT: GaugeVec = register_gauge_vec_with_registry!(
         "tokio_tasks",
         "Count of spawned tasks",
@@ -309,24 +364,14 @@ lazy_static! {
     )
     .unwrap();
 
-    pub static ref TOP_BID_UPDATE_LATENCY: Histogram = register_histogram_with_registry!(
-        "top_bid_update_latency_secs",
-        "Latency of top bid updates",
-        vec![0.0001, 0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 5.0, 10.0],
+    pub static ref BID_SORTER_PROCESS_LATENCY_US: Histogram = register_histogram_with_registry!(
+        "bid_sorter_process_latency_us",
+        "Latency of bid sorter process in us",
+        vec![1., 5., 10., 25., 50., 100., 500., 1_000., 5_000., 10_000., 50_000., 100_000., 1_000_000.],
         &RELAY_METRICS_REGISTRY
     )
     .unwrap();
 
-
-    //////////////// TIMING GAMES ////////////////
-
-    static ref GET_HEADER_TIMEOUT: HistogramVec = register_histogram_vec_with_registry!(
-        "get_header_sleep",
-        "Sleep time for get header",
-        &["is_timeout"],
-        &RELAY_METRICS_REGISTRY
-    )
-    .unwrap();
 
     //////////////// CACHE ////////////////
 
@@ -344,11 +389,180 @@ lazy_static! {
     )
     .unwrap();
 
+    pub static ref BID_CREATION_LATENCY: Histogram = register_histogram_with_registry!(
+        "bid_creation_latency_us",
+        "Latency of creating the builder bid in us",
+        vec![1., 5., 10., 15., 25., 50., 100., 250., 500., 1_000., 5_000., 10_000., 100_000.],
+        &RELAY_METRICS_REGISTRY
+    )
+    .unwrap();
 
-    static ref BID_IS_CANCELLABLE: IntCounterVec = register_int_counter_vec_with_registry!(
-        "bid_is_cancellable",
-        "Count of cancellable bids",
-        &["is_cancellable"],
+    pub static ref BID_SIGNING_LATENCY: Histogram = register_histogram_with_registry!(
+        "bid_signing_latency_us",
+        "Latency of re-singing the get header bid in us",
+        vec![1., 5., 10., 15., 25., 50., 100., 250., 500., 1_000., 5_000., 10_000., 100_000.],
+        &RELAY_METRICS_REGISTRY
+    )
+    .unwrap();
+
+
+    /// Submission trace metrics
+    pub static ref SUB_TRACE_LATENCY: HistogramVec = register_histogram_vec_with_registry!(
+        "submission_trace_latency_us",
+        "Latency of submission trace for each step",
+        &["step"],
+        vec![1., 5., 10., 15., 25., 50., 100., 250., 500., 1_000., 5_000., 10_000., 25_000., 50_000., 100_000., 500_000., 1_000_000., 5_000_000., 10_000_000., 50_000_000., 100_000_000.,],
+        &RELAY_METRICS_REGISTRY
+    )
+    .unwrap();
+
+
+    /// Submission trace metrics
+    pub static ref GET_PAYLOAD_TRACE_LATENCY: HistogramVec = register_histogram_vec_with_registry!(
+        "get_payload_trace_latency_us",
+        "Latency of get payload trace for each step",
+        &["step"],
+        vec![1., 5., 10., 15., 25., 50., 100., 250., 500., 1_000., 5_000., 10_000., 25_000., 50_000., 100_000., 500_000., 1_000_000., 5_000_000., 10_000_000., 50_000_000., 100_000_000.,],
+        &RELAY_METRICS_REGISTRY
+    )
+    .unwrap();
+
+    //////////////// GET HEADER ////////////////
+    pub static ref HEADER_TIMEOUT_FETCH: IntCounter = register_int_counter_with_registry!(
+        "header_timeout_fetch",
+        "Count of timeouts in header fetch",
+        &RELAY_METRICS_REGISTRY
+    )
+    .unwrap();
+
+    pub static ref HEADER_TIMEOUT_SLEEP: IntCounter = register_int_counter_with_registry!(
+        "header_timeout_sleep",
+        "Count of timeouts in header fetch",
+        &RELAY_METRICS_REGISTRY
+    )
+    .unwrap();
+
+    //////////////// DECODING BLOCKS ////////////////
+
+    pub static ref SUBMISSION_BY_COMPRESSION: IntCounterVec = register_int_counter_vec_with_registry!(
+        "bid_submission_compression_count",
+        "Count of bids by compression",
+        &["compression"],
+        &RELAY_METRICS_REGISTRY
+    )
+    .unwrap();
+
+    pub static ref SUBMISSION_BY_ENCODING: IntCounterVec = register_int_counter_vec_with_registry!(
+        "bid_submission_encoding_count",
+        "Count of bids by encoding",
+        &["encoding"],
+        &RELAY_METRICS_REGISTRY
+    )
+    .unwrap();
+
+    pub static ref SUBMISSION_COMPRESSED_BYTES: IntCounterVec = register_int_counter_vec_with_registry!(
+        "bid_submission_compressed_bytes_total",
+        "Compressed bytes by compression",
+        &["compression"],
+        &RELAY_METRICS_REGISTRY
+    )
+    .unwrap();
+
+    pub static ref SUBMISSION_DECOMPRESSED_BYTES: IntCounterVec = register_int_counter_vec_with_registry!(
+        "bid_submission_decompressed_bytes_total",
+        "Decompressed bytes by compression",
+        &["compression"],
+        &RELAY_METRICS_REGISTRY
+    )
+    .unwrap();
+
+    pub static ref DECOMPRESSION_LATENCY: HistogramVec = register_histogram_vec_with_registry!(
+        "bid_decompression_latency_us",
+        "Latency of decompressing bid submissions in us",
+        &["compression"],
+        vec![1., 5., 10., 15., 25., 50., 100., 250., 500., 1_000., 5_000., 10_000., 25_000., 50_000., 100_000., 500_000., 1_000_000., 5_000_000., 10_000_000., 50_000_000., 100_000_000.,],
+        &RELAY_METRICS_REGISTRY
+    )
+    .unwrap();
+
+    pub static ref BID_DECODING_LATENCY: HistogramVec = register_histogram_vec_with_registry!(
+        "bid_decoding_latency_us",
+        "Latency of decoding block payloads in us",
+        &["encoding"],
+        vec![1., 5., 10., 15., 25., 50., 100., 250., 500., 1_000., 5_000., 10_000., 25_000., 50_000., 100_000., 500_000., 1_000_000., 5_000_000., 10_000_000., 50_000_000., 100_000_000.,],
+        &RELAY_METRICS_REGISTRY
+    )
+    .unwrap();
+
+    pub static ref BID_DECOMPRESS_SIZEHINT_REL_ERROR: HistogramVec = register_histogram_vec_with_registry!(
+        "bid_sizehint_rel_error",
+        "abs(actual-estimate)/max(1, actual)",
+        &["compression"],
+        vec![0.005, 0.01, 0.02, 0.05, 0.10, 0.20, 0.33, 0.50, 1.0, 2.0, 5.0],
+        &RELAY_METRICS_REGISTRY
+    ).unwrap();
+
+    //////////////// AUCTIONEER ////////////////
+    pub static ref HYDRATION_CACHE_HITS: IntCounterVec = register_int_counter_vec_with_registry!(
+        "hydration_cache_hits",
+        "Count of hydration cache hits",
+        &["order_type"],
+        &RELAY_METRICS_REGISTRY
+    )
+    .unwrap();
+
+    pub static ref STATE_TRANSITION_LATENCY: HistogramVec = register_histogram_vec_with_registry!(
+        "state_transition_latency_us",
+        "Latency of state transition in us",
+        &["start_event_end"],
+        vec![0.5, 1., 5., 10., 15., 25., 50., 100., 250., 500., 1_000., 5_000., 10_000., 25_000., 50_000., 100_000., 500_000., 1_000_000., 5_000_000., 10_000_000., 50_000_000., 100_000_000.,],
+        &RELAY_METRICS_REGISTRY
+    )
+    .unwrap();
+
+    pub static ref STATE_TRANSITION_COUNT: IntCounterVec = register_int_counter_vec_with_registry!(
+        "state_transition_count",
+        "Count of state transition events",
+        &["start_event_end"],
+        &RELAY_METRICS_REGISTRY
+    )
+    .unwrap();
+
+
+    //////////////// WORKER ////////////////
+
+    pub static ref WORKER_UTIL: HistogramVec = register_histogram_vec_with_registry!(
+        "worker_utilization",
+        "Worker utilization",
+        &["worker"],
+        linear_buckets(0.0, 0.05, 20).unwrap(),
+        &RELAY_METRICS_REGISTRY
+    )
+    .unwrap();
+
+    pub static ref WORKER_TASK_COUNT: IntCounterVec = register_int_counter_vec_with_registry!(
+        "worker_task_count",
+        "Count of tasks processed",
+        &["task", "worker"],
+        &RELAY_METRICS_REGISTRY
+    )
+    .unwrap();
+
+    pub static ref WORKER_TASK_LATENCY_US: HistogramVec = register_histogram_vec_with_registry!(
+        "worker_latency_us",
+        "Latency of task processed in us",
+        &["task", "worker"],
+        vec![0.5, 1., 5., 10., 15., 25., 50., 100., 250., 500., 1_000., 5_000., 10_000., 25_000., 50_000., 100_000., 500_000., 1_000_000., 5_000_000., 10_000_000., 50_000_000., 100_000_000.,],
+        &RELAY_METRICS_REGISTRY
+    )
+    .unwrap();
+
+
+    pub static ref WORKER_QUEUE_LEN: HistogramVec = register_histogram_vec_with_registry!(
+        "worker_queue_len",
+        "Length of worker queue",
+        &["type"],
+        vec![0., 1., 5., 10., 15., 25., 50., 100., 500., 1_000., 2_500.0,  5_000., 7_500., 10_000., 25_000., 50_000., 100_000.,],
         &RELAY_METRICS_REGISTRY
     )
     .unwrap();
@@ -368,17 +582,27 @@ impl ApiMetrics {
         Self { endpoint, _timer, has_completed: false }
     }
 
-    pub fn status(&mut self, status_code: &str) {
+    pub fn record(
+        &mut self,
+        status_code: &str,
+        size: usize,
+        read_latency: Duration,
+        wait_latency: Duration,
+        gap_latency: Duration,
+    ) {
         REQUEST_STATUS.with_label_values(&[self.endpoint.as_str(), status_code]).inc();
+        REQUEST_SIZE.with_label_values(&[self.endpoint.as_str()]).observe(size as f64);
+        REQUEST_READ_BODY_LATENCY
+            .with_label_values(&[self.endpoint.as_str(), "read"])
+            .observe(read_latency.as_secs_f64());
+        REQUEST_READ_BODY_LATENCY
+            .with_label_values(&[self.endpoint.as_str(), "wait"])
+            .observe(wait_latency.as_secs_f64());
+        REQUEST_READ_BODY_LATENCY
+            .with_label_values(&[self.endpoint.as_str(), "gap"])
+            .observe(gap_latency.as_secs_f64());
+
         self.has_completed = true;
-    }
-
-    pub fn size(endpoint: &str, size: usize) {
-        REQUEST_SIZE.with_label_values(&[endpoint]).observe(size as f64);
-    }
-
-    pub fn cancellable_bid(is_cancellable: bool) {
-        BID_IS_CANCELLABLE.with_label_values(&[is_cancellable.to_string().as_str()]).inc();
     }
 }
 
@@ -460,18 +684,6 @@ impl Drop for DbMetricRecord<'_> {
     }
 }
 
-pub struct RedisMetrics;
-
-impl RedisMetrics {
-    pub fn count(endpoint: &str, is_success: bool) {
-        REDIS_COUNTS.with_label_values(&[endpoint, is_success.to_string().as_str()]).inc();
-    }
-
-    pub fn latency(endpoint: &str) -> HistogramTimer {
-        REDIS_LATENCY.with_label_values(&[endpoint]).start_timer()
-    }
-}
-
 pub struct TopBidMetrics;
 
 impl TopBidMetrics {
@@ -483,47 +695,11 @@ impl TopBidMetrics {
     pub fn top_bid_update_count() {
         TOP_BID_UPDATE_COUNT.inc();
     }
-
-    pub fn received_at(timestamp_ms: u64) {
-        let latency = utcnow_ms().saturating_sub(timestamp_ms) as f64 / 1000.0;
-        TOP_BID_UPDATE_LATENCY.observe(latency);
-    }
 }
 
 impl Drop for TopBidMetrics {
     fn drop(&mut self) {
         TOP_BID_CONNECTIONS.dec();
-    }
-}
-
-pub struct RedisMetricRecord<'a> {
-    endpoint: &'a str,
-    has_recorded: bool,
-    _timer: HistogramTimer,
-}
-
-impl<'a> RedisMetricRecord<'a> {
-    pub fn new(endpoint: &'a str) -> Self {
-        let timer = RedisMetrics::latency(endpoint);
-        RedisMetricRecord { has_recorded: false, _timer: timer, endpoint }
-    }
-
-    pub fn record_success(&mut self) {
-        self.has_recorded = true;
-        RedisMetrics::count(self.endpoint, true);
-    }
-
-    pub fn record_failure(&mut self) {
-        self.has_recorded = true;
-        RedisMetrics::count(self.endpoint, false);
-    }
-}
-
-impl Drop for RedisMetricRecord<'_> {
-    fn drop(&mut self) {
-        if !self.has_recorded {
-            self.record_failure();
-        }
     }
 }
 
@@ -542,12 +718,28 @@ impl SimulatorMetrics {
         SIMULATOR_LATENCY.with_label_values(&[simulator]).start_timer()
     }
 
+    pub fn block_merge_status(is_success: bool) {
+        BLOCK_MERGE_STATUS.with_label_values(&[is_success.to_string().as_str()]).inc();
+    }
+
+    pub fn block_merge_timer(simulator: &str) -> HistogramTimer {
+        BLOCK_MERGE_LATENCY.with_label_values(&[simulator]).start_timer()
+    }
+
     pub fn demotion_count() {
         BUILDER_DEMOTION_COUNT.inc();
     }
 
     pub fn simulator_sync(simulator: &str, is_synced: bool) {
         SIMULATOR_SYNC.with_label_values(&[simulator]).set(is_synced as i64 as f64);
+    }
+
+    pub fn sim_mananger_count(label: &str, count: usize) {
+        SIM_MANAGER_COUNT.with_label_values(&[label]).inc_by(count as u64);
+    }
+
+    pub fn sim_manager_gauge(label: &str, val: usize) {
+        SIM_MANAGER_GAUGE.with_label_values(&[label]).set(val as f64);
     }
 }
 
@@ -556,31 +748,6 @@ pub struct BeaconMetrics;
 impl BeaconMetrics {
     pub fn beacon_sync(beacon: &str, is_synced: bool) {
         BEACON_SYNC.with_label_values(&[beacon]).set(is_synced as i64 as f64);
-    }
-}
-
-pub struct GetHeaderMetric {
-    sleep_time: f64,
-    has_recorded: bool,
-}
-
-impl GetHeaderMetric {
-    pub fn new(sleep_time: Duration) -> Self {
-        Self { sleep_time: sleep_time.as_secs_f64(), has_recorded: false }
-    }
-
-    pub fn record(&mut self) {
-        self.has_recorded = true;
-    }
-}
-
-impl Drop for GetHeaderMetric {
-    fn drop(&mut self) {
-        let is_timeout = !self.has_recorded;
-
-        GET_HEADER_TIMEOUT
-            .with_label_values(&[is_timeout.to_string().as_str()])
-            .observe(self.sleep_time);
     }
 }
 

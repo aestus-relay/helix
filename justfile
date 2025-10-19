@@ -1,4 +1,4 @@
-toolchain := "nightly-2025-02-26"
+toolchain := "nightly-2025-09-18"
 
 fmt:
   rustup toolchain install {{toolchain}} > /dev/null 2>&1 && \
@@ -9,20 +9,16 @@ fmt-check:
   cargo +{{toolchain}} fmt --check
 
 clippy:
-  cargo clippy --all-features --no-deps -- -D warnings
+  cargo +{{toolchain}} clippy --all-features --fix --allow-dirty --no-deps -- -D warnings
 
 test:
   cargo test --workspace --all-features
-
-local-redis:
-  docker run -d --name helix-redis -p 6379:6379 redis/redis-stack-server:latest
 
 local-postgres:
   docker run -d --name helix-postgres -e POSTGRES_PASSWORD=password -p 5432:5432 timescale/timescaledb-ha:pg17
 
 local-setup:
-  just local-postgres && \
-  just local-redis
+  just local-postgres
 
 local-clean:
-  docker rm -f helix-postgres helix-redis
+  docker rm -f helix-postgres
