@@ -52,6 +52,8 @@ pub struct RelayConfig {
     pub is_submission_instance: bool,
     pub is_registration_instance: bool,
     #[serde(default)]
+    pub k8s_leader_election: K8sLeaderElectionConfig,
+    #[serde(default)]
     is_local_dev: bool,
     /// Cores configuration, recommended to be set for production use
     pub cores: CoresConfig,
@@ -87,6 +89,7 @@ impl RelayConfig {
             inclusion_list: Default::default(),
             is_submission_instance: Default::default(),
             is_registration_instance: Default::default(),
+            k8s_leader_election: Default::default(),
             is_local_dev: Default::default(),
             cores: CoresConfig {
                 auctioneer: 1,
@@ -231,6 +234,10 @@ pub const fn default_usize<const U: usize>() -> usize {
 
 pub const fn default_u64<const D: u64>() -> u64 {
     D
+}
+
+pub const fn default_f64<const D: u64>() -> f64 {
+    D as f64
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -678,4 +685,59 @@ mod tests {
         assert!(result.is_ok());
         assert!(!result.unwrap());
     }
+}
+
+/// Kubernetes leader election configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct K8sLeaderElectionConfig {
+    /// Enable Kubernetes leader election
+    #[serde(default = "default_bool::<false>")]
+    pub enabled: bool,
+    /// Name of the Lease object in Kubernetes
+    #[serde(default = "default_lease_name")]
+    pub lease_name: String,
+    /// Duration in seconds that the lease is valid (supports fractional seconds, e.g., 1.0)
+    #[serde(default = "default_f64::<1>")]
+    pub lease_duration_seconds: f64,
+    /// Time in seconds before lease expiry to renew (leader renewal interval)
+    /// Should be < lease_duration_seconds to give leader a head start (supports fractional, e.g., 0.5)
+    #[serde(default = "default_renew_deadline")]
+    pub renew_deadline_seconds: f64,
+    /// Interval in seconds between lease acquisition attempts (supports fractional seconds)
+    #[serde(default = "default_f64::<1>")]
+    pub retry_period_seconds: f64,
+    /// Timeout in seconds to wait for slot completion during shutdown
+    #[serde(default = "default_u64::<4>")]
+    pub slot_completion_timeout_seconds: u64,
+    /// Interval in slots to rotate leadership (None = no rotation, Some(32) = every epoch)
+    #[serde(default = "default_rotation_interval")]
+    pub rotation_interval_slots: Option<u64>,
+}
+
+impl Default for K8sLeaderElectionConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            lease_name: "helix-relay-leader".to_string(),
+            lease_duration_seconds: 1.0,
+            renew_deadline_seconds: 0.5,
+            retry_period_seconds: 1.0,
+            slot_completion_timeout_seconds: 4,
+            rotation_interval_slots: Some(32),
+        }
+    }
+}
+
+fn default_rotation_interval() -> Option<u64> {
+    Some(32)
+}
+
+fn default_renew_deadline() -> f64 {
+    // Default to 0.5s to give 0.5s head start when lease_duration is 1s
+    // This prevents race conditions during leader renewal
+    0.5
+}
+
+fn default_lease_name() -> String {
+    "helix-relay-leader".to_string()
 }

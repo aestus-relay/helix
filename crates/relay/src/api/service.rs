@@ -41,6 +41,7 @@ pub fn start_api_service<A: Api>(
     api_provider: Arc<A::ApiProvider>,
     known_validators_loaded: Arc<AtomicBool>,
     terminating: Arc<AtomicBool>,
+    is_leader: Arc<AtomicBool>,
     top_bid_tx: tokio::sync::broadcast::Sender<TopBidUpdate>,
     relay_network_api: RelayNetworkApi,
     auctioneer_handle: AuctioneerHandle,
@@ -57,6 +58,7 @@ pub fn start_api_service<A: Api>(
         api_provider,
         known_validators_loaded,
         terminating.clone(),
+        is_leader.clone(),
         top_bid_tx.clone(),
         relay_network_api,
         auctioneer_handle,
@@ -75,6 +77,7 @@ pub async fn run_api_service<A: Api>(
     api_provider: Arc<A::ApiProvider>,
     known_validators_loaded: Arc<AtomicBool>,
     terminating: Arc<AtomicBool>,
+    is_leader: Arc<AtomicBool>,
     top_bid_tx: tokio::sync::broadcast::Sender<TopBidUpdate>,
     relay_network_api: RelayNetworkApi,
     auctioneer_handle: AuctioneerHandle,
@@ -145,6 +148,7 @@ pub async fn run_api_service<A: Api>(
         delivered_payloads_cache,
         known_validators_loaded,
         terminating,
+        is_leader,
     );
 
     let listener =

@@ -3,7 +3,9 @@ mod auctioneer;
 mod beacon;
 mod database;
 mod gossip;
-mod housekeeper;
+pub mod housekeeper;
+#[cfg(feature = "k8s")]
+pub mod k8s;
 mod network;
 mod spine;
 mod tcp_bid_recv;
