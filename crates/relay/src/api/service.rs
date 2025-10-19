@@ -41,6 +41,7 @@ pub fn start_api_service<A: Api>(
     api_provider: Arc<A::ApiProvider>,
     known_validators_loaded: Arc<AtomicBool>,
     terminating: Arc<AtomicBool>,
+    is_leader: Arc<AtomicBool>,
     relay_network_api: RelayNetworkApi,
     db_handle: DbHandle,
     auctioneer_handle: AuctioneerHandle,
@@ -61,6 +62,7 @@ pub fn start_api_service<A: Api>(
         api_provider,
         known_validators_loaded,
         terminating.clone(),
+        is_leader,
         relay_network_api,
         db_handle.clone(),
         auctioneer_handle,
@@ -83,6 +85,7 @@ pub async fn run_api_service<A: Api>(
     api_provider: Arc<A::ApiProvider>,
     known_validators_loaded: Arc<AtomicBool>,
     terminating: Arc<AtomicBool>,
+    is_leader: Arc<AtomicBool>,
     relay_network_api: RelayNetworkApi,
     db_handle: DbHandle,
     auctioneer_handle: AuctioneerHandle,
@@ -160,6 +163,7 @@ pub async fn run_api_service<A: Api>(
         delivered_payloads_cache,
         known_validators_loaded,
         terminating,
+        is_leader,
     );
 
     let listener =

@@ -156,6 +156,42 @@ async fn run(
     .map_err(|e| eyre!("housekeeper init: {e}"))?;
 
     let terminating = Arc::new(AtomicBool::default());
+    let is_leader = Arc::new(AtomicBool::default());
+
+    // Initialize K8s lease manager if enabled
+    #[cfg(feature = "k8s")]
+    let lease_manager = if config.k8s_leader_election.enabled {
+        match helix_relay::k8s::LeaseManager::new(
+            config.k8s_leader_election.clone(),
+            is_leader.clone(),
+            &current_slot_info,
+            &local_cache,
+        )
+        .await
+        {
+            Ok(manager) => {
+                info!("K8s leader election enabled, starting lease manager");
+                manager.start().await?;
+                Some(manager)
+            }
+            Err(err) => {
+                error!(%err, "Failed to initialize K8s lease manager");
+                return Err(eyre!("K8s lease manager init failed: {err}"));
+            }
+        }
+    } else {
+        info!("K8s leader election disabled, running as single leader");
+        is_leader.store(true, Ordering::Relaxed);
+        None
+    };
+
+    #[cfg(not(feature = "k8s"))]
+    let lease_manager: Option<()> = {
+        info!("K8s feature not enabled, running as single leader");
+        is_leader.store(true, Ordering::Relaxed);
+        None
+    };
+
     let termination_grace_period = Duration::from_millis(config.router_config.shutdown_delay_ms);
 
     spawn_tokio_monitoring();
@@ -198,6 +234,7 @@ async fn run(
             Arc::new(DefaultApiProvider {}),
             known_validators_loaded,
             terminating.clone(),
+            is_leader.clone(),
             relay_network_api.api(),
             db_handle.clone(),
             auctioneer_handle.clone(),
@@ -322,11 +359,24 @@ async fn run(
 
     terminating.store(true, Ordering::Relaxed);
 
-    if !termination_grace_period.is_zero() {
+    // If using K8s leader election, perform graceful shutdown
+    #[cfg(feature = "k8s")]
+    if let Some(manager) = lease_manager {
+        info!("Performing slot-aware graceful shutdown");
+        manager.graceful_shutdown().await?;
+    } else if !termination_grace_period.is_zero() {
+        // Standard graceful shutdown (no K8s)
         tracing::info!("Pausing for {}ms before exit", termination_grace_period.as_millis());
-
         tokio::time::sleep(termination_grace_period).await;
     }
 
+    #[cfg(not(feature = "k8s"))]
+    if !termination_grace_period.is_zero() {
+        // Wait for the grace period to expire before exiting.
+        tracing::info!("Pausing for {}ms before exit", termination_grace_period.as_millis());
+        tokio::time::sleep(termination_grace_period).await;
+    }
+
+    info!("Shutdown complete");
     Ok(())
 }

@@ -4,7 +4,9 @@ mod beacon;
 mod bid_decoder;
 mod data_gatherer;
 mod gossip;
-mod housekeeper;
+pub mod housekeeper;
+#[cfg(feature = "k8s")]
+pub mod k8s;
 mod network;
 mod simulator;
 mod spine;

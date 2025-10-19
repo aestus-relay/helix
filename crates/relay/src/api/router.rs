@@ -35,6 +35,8 @@ use crate::{
 pub struct Terminating(pub Arc<AtomicBool>);
 #[derive(Clone)]
 pub struct KnownValidatorsLoaded(pub Arc<AtomicBool>);
+#[derive(Clone)]
+pub struct IsLeader(pub Arc<AtomicBool>);
 
 pub fn build_router<A: Api>(
     router_config: &mut RouterConfig,
@@ -46,6 +48,7 @@ pub fn build_router<A: Api>(
     delivered_payloads_cache: DeliveredPayloadsCache,
     known_validators_loaded: Arc<AtomicBool>,
     terminating: Arc<AtomicBool>,
+    is_leader: Arc<AtomicBool>,
 ) -> Router {
     router_config.resolve_condensed_routes();
 
@@ -106,6 +109,12 @@ pub fn build_router<A: Api>(
         router = router.route(&route_info.route.path(), maybe_limited);
     }
 
+    // Add health endpoint for K8s leader election (always enabled, no rate limiting)
+    #[cfg(feature = "k8s")]
+    {
+        router = router.route("/health/leader", get(health_leader_handler));
+    }
+
     // periodically prune rate limits
     std::thread::spawn(move || {
         let interval = Duration::from_secs(60);
@@ -142,7 +151,17 @@ pub fn build_router<A: Api>(
         .layer(Extension(bids_cache))
         .layer(Extension(delivered_payloads_cache))
         .layer(Extension(KnownValidatorsLoaded(known_validators_loaded)))
-        .layer(Extension(Terminating(terminating)));
+        .layer(Extension(Terminating(terminating)))
+        .layer(Extension(IsLeader(is_leader)));
 
     router
+}
+
+/// Health check handler for K8s leader election
+#[cfg(feature = "k8s")]
+async fn health_leader_handler(
+    Extension(IsLeader(is_leader)): Extension<IsLeader>,
+    Extension(Terminating(terminating)): Extension<Terminating>,
+) -> impl axum::response::IntoResponse {
+    crate::k8s::health_leader(is_leader, terminating).await
 }
