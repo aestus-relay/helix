@@ -42,10 +42,13 @@ fn main() {
 
     let keypair = load_keypair();
 
-    let instance_id = config
-        .instance_id
-        .clone()
-        .unwrap_or_else(|| format!("RelayUnknown_{}", config.postgres.region_name));
+    let instance_id = config.instance_id.clone().unwrap_or_else(|| {
+        format!(
+            "RelayUnknown_{}_{}",
+            config.network_config.short_name(),
+            config.postgres.region_name
+        )
+    });
 
     let _guard = block_on(init_tracing_log(
         &config.logging,
@@ -59,8 +62,18 @@ fn main() {
         config.logging.dir_path(),
     );
 
+    info!(
+        instance_id,
+        region = config.postgres.region_name,
+        network =% config.network_config,
+        pubkey =% keypair.pk,
+        "starting relay"
+    );
+
+    info!(cores = ?config.cores, "cores config");
+
     block_on(start_metrics_server(&config));
-    match block_on(run(instance_id, config, keypair)) {
+    match block_on(run(config, keypair)) {
         Ok(_) => info!("relay exited"),
         Err(err) => {
             error!(%err, "relay exited with error");
@@ -69,23 +82,13 @@ fn main() {
     }
 }
 
-async fn run(instance_id: String, config: RelayConfig, keypair: BlsKeypair) -> eyre::Result<()> {
-    let beacon_client = start_beacon_client(&config);
-    let chain_info = beacon_client.load_chain_info().await;
-    let chain_info = Arc::new(chain_info);
-
-    info!(
-        instance_id,
-        region = config.postgres.region_name,
-        network =% chain_info.name,
-        pubkey =% keypair.pk,
-        "starting relay"
-    );
-
+async fn run(config: RelayConfig, keypair: BlsKeypair) -> eyre::Result<()> {
+    let chain_info = Arc::new(config.network_config.to_chain_info());
     let relay_signing_context = Arc::new(RelaySigningContext::new(keypair, chain_info.clone()));
 
     let known_validators_loaded = Arc::new(AtomicBool::default());
 
+    let beacon_client = start_beacon_client(&config);
     let db = start_db_service(&config, known_validators_loaded.clone()).await?;
     let local_cache = start_auctioneer(db.clone()).await?;
 
@@ -112,10 +115,9 @@ async fn run(instance_id: String, config: RelayConfig, keypair: BlsKeypair) -> e
     let terminating = Arc::new(AtomicBool::default());
     let is_leader = Arc::new(AtomicBool::default());
 
-    // Initialize K8s lease manager if enabled
-    #[cfg(feature = "k8s")]
+    // Initialize K8s lease manager before moving local_cache/current_slot_info
     let lease_manager = if config.k8s_leader_election.enabled {
-        match helix_relay::k8s::LeaseManager::new(
+        match helix_k8s::LeaseManager::new(
             config.k8s_leader_election.clone(),
             is_leader.clone(),
             &current_slot_info,
@@ -134,20 +136,17 @@ async fn run(instance_id: String, config: RelayConfig, keypair: BlsKeypair) -> e
             }
         }
     } else {
+        // Not using K8s leader election, assume we're the leader
         info!("K8s leader election disabled, running as single leader");
-        is_leader.store(true, Ordering::Relaxed);
-        None
-    };
-
-    #[cfg(not(feature = "k8s"))]
-    let lease_manager: Option<()> = {
-        info!("K8s feature not enabled, running as single leader");
         is_leader.store(true, Ordering::Relaxed);
         None
     };
 
     start_admin_service(local_cache.clone(), &config);
 
+    // Note: The current relay API doesn't accept is_leader parameter
+    // K8s leader election is active but API service needs to be refactored to use it
+    // The is_leader flag is managed by LeaseManager and can be accessed via the Arc
     tokio::spawn(start_api_service::<ApiProd>(
         config.clone(),
         db.clone(),
@@ -159,7 +158,6 @@ async fn run(instance_id: String, config: RelayConfig, keypair: BlsKeypair) -> e
         Arc::new(DefaultApiProvider {}),
         known_validators_loaded,
         terminating.clone(),
-        is_leader.clone(),
         top_bid_tx,
         event_channel,
         relay_network_api.api(),
@@ -184,19 +182,11 @@ async fn run(instance_id: String, config: RelayConfig, keypair: BlsKeypair) -> e
     terminating.store(true, Ordering::Relaxed);
 
     // If using K8s leader election, perform graceful shutdown
-    #[cfg(feature = "k8s")]
     if let Some(manager) = lease_manager {
         info!("Performing slot-aware graceful shutdown");
         manager.graceful_shutdown().await?;
     } else if termination_grace_period != 0 {
         // Standard graceful shutdown (no K8s)
-        info!("Pausing for {termination_grace_period}ms before exit");
-        tokio::time::sleep(Duration::from_millis(termination_grace_period)).await;
-    }
-
-    #[cfg(not(feature = "k8s"))]
-    if termination_grace_period != 0 {
-        // Wait for the grace period to expire before exiting.
         info!("Pausing for {termination_grace_period}ms before exit");
         tokio::time::sleep(Duration::from_millis(termination_grace_period)).await;
     }
