@@ -379,6 +379,27 @@ impl SignedBidSubmission {
             }
         }
     }
+
+    pub fn num_blobs(&self) -> u64 {
+        match self {
+            SignedBidSubmission::Electra(bid) => bid.blobs_bundle.blobs().len() as u64,
+            SignedBidSubmission::Fulu(bid) => bid.blobs_bundle.blobs().len() as u64,
+        }
+    }
+
+    pub fn blob_gas_used(&self) -> u64 {
+        match self {
+            SignedBidSubmission::Electra(bid) => bid.execution_payload.blob_gas_used,
+            SignedBidSubmission::Fulu(bid) => bid.execution_payload.blob_gas_used,
+        }
+    }
+
+    pub fn excess_blob_gas(&self) -> u64 {
+        match self {
+            SignedBidSubmission::Electra(bid) => bid.execution_payload.excess_blob_gas,
+            SignedBidSubmission::Fulu(bid) => bid.execution_payload.excess_blob_gas,
+        }
+    }
 }
 
 impl SignedBidSubmission {
