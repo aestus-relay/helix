@@ -536,6 +536,18 @@ impl SignedBidSubmission {
     pub fn execution_requests_ref(&self) -> &Arc<ExecutionRequests> {
         &self.execution_requests
     }
+
+    pub fn num_blobs(&self) -> u64 {
+        self.blobs_bundle.blobs.len() as u64
+    }
+
+    pub fn blob_gas_used(&self) -> u64 {
+        self.execution_payload.blob_gas_used
+    }
+
+    pub fn excess_blob_gas(&self) -> u64 {
+        self.execution_payload.excess_blob_gas
+    }
 }
 
 impl SignedBidSubmission {

@@ -121,7 +121,7 @@ pub struct PendingBlockSubmissionValue {
     pub live_ts: Option<u64>,
 }
 
-const BLOCK_SUBMISSION_FIELD_COUNT: usize = 18;
+const BLOCK_SUBMISSION_FIELD_COUNT: usize = 21;
 const MAINNET_VALIDATOR_COUNT: usize = 1_100_000;
 const DB_CHECK_INTERVAL: Duration = Duration::from_secs(1);
 static DELIVERED_PAYLOADS_MIG_SLOT: AtomicU64 = AtomicU64::new(0);
@@ -889,6 +889,9 @@ impl PostgresDatabaseService {
                 metadata: Option<&'a str>,
                 is_adjusted: bool,
                 live_ts: Option<i64>,
+                num_blobs: i32,
+                blob_gas_used: i32,
+                excess_blob_gas: i32,
             }
 
             let mut structured_blocks: Vec<BlockParams> = Vec::with_capacity(chunk.len());
@@ -912,6 +915,9 @@ impl PostgresDatabaseService {
                     metadata: item.trace.metadata.as_deref(),
                     is_adjusted: item.is_adjusted,
                     live_ts: item.live_ts.map(|v| v as i64),
+                    num_blobs: item.submission.num_blobs() as i32,
+                    blob_gas_used: item.submission.blob_gas_used() as i32,
+                    excess_blob_gas: item.submission.excess_blob_gas() as i32,
                 });
             }
 
@@ -937,12 +943,15 @@ impl PostgresDatabaseService {
                 params.push(&blk.metadata);
                 params.push(&blk.is_adjusted);
                 params.push(&blk.live_ts);
+                params.push(&blk.num_blobs);
+                params.push(&blk.blob_gas_used);
+                params.push(&blk.excess_blob_gas);
             }
 
             // Build and execute INSERT for this chunk
             let num_cols = BLOCK_SUBMISSION_FIELD_COUNT;
             let mut sql = String::from(
-                "INSERT INTO block_submission (block_number, slot_number, parent_hash, block_hash, builder_pubkey, proposer_pubkey, proposer_fee_recipient, gas_limit, gas_used, value, num_txs, timestamp, first_seen, region_id, optimistic_version, metadata, is_adjusted, live_ts) VALUES ",
+                "INSERT INTO block_submission (block_number, slot_number, parent_hash, block_hash, builder_pubkey, proposer_pubkey, proposer_fee_recipient, gas_limit, gas_used, value, num_txs, timestamp, first_seen, region_id, optimistic_version, metadata, is_adjusted, live_ts, num_blobs, blob_gas_used, excess_blob_gas) VALUES ",
             );
             let clauses: Vec<String> = (0..structured_blocks.len())
                 .map(|i| {
