@@ -115,10 +115,9 @@ async fn run(config: RelayConfig, keypair: BlsKeypair) -> eyre::Result<()> {
     let terminating = Arc::new(AtomicBool::default());
     let is_leader = Arc::new(AtomicBool::default());
 
-    // Initialize K8s lease manager if enabled
-    #[cfg(feature = "k8s")]
+    // Initialize K8s lease manager before moving local_cache/current_slot_info
     let lease_manager = if config.k8s_leader_election.enabled {
-        match helix_relay::k8s::LeaseManager::new(
+        match helix_k8s::LeaseManager::new(
             config.k8s_leader_election.clone(),
             is_leader.clone(),
             &current_slot_info,
@@ -137,20 +136,17 @@ async fn run(config: RelayConfig, keypair: BlsKeypair) -> eyre::Result<()> {
             }
         }
     } else {
+        // Not using K8s leader election, assume we're the leader
         info!("K8s leader election disabled, running as single leader");
-        is_leader.store(true, Ordering::Relaxed);
-        None
-    };
-
-    #[cfg(not(feature = "k8s"))]
-    let lease_manager: Option<()> = {
-        info!("K8s feature not enabled, running as single leader");
         is_leader.store(true, Ordering::Relaxed);
         None
     };
 
     start_admin_service(local_cache.clone(), &config);
 
+    // Note: The current relay API doesn't accept is_leader parameter
+    // K8s leader election is active but API service needs to be refactored to use it
+    // The is_leader flag is managed by LeaseManager and can be accessed via the Arc
     tokio::spawn(start_api_service::<ApiProd>(
         config.clone(),
         db.clone(),
@@ -162,7 +158,6 @@ async fn run(config: RelayConfig, keypair: BlsKeypair) -> eyre::Result<()> {
         Arc::new(DefaultApiProvider {}),
         known_validators_loaded,
         terminating.clone(),
-        is_leader.clone(),
         top_bid_tx,
         event_channel,
         relay_network_api.api(),
@@ -187,19 +182,11 @@ async fn run(config: RelayConfig, keypair: BlsKeypair) -> eyre::Result<()> {
     terminating.store(true, Ordering::Relaxed);
 
     // If using K8s leader election, perform graceful shutdown
-    #[cfg(feature = "k8s")]
     if let Some(manager) = lease_manager {
         info!("Performing slot-aware graceful shutdown");
         manager.graceful_shutdown().await?;
     } else if termination_grace_period != 0 {
         // Standard graceful shutdown (no K8s)
-        info!("Pausing for {termination_grace_period}ms before exit");
-        tokio::time::sleep(Duration::from_millis(termination_grace_period)).await;
-    }
-
-    #[cfg(not(feature = "k8s"))]
-    if termination_grace_period != 0 {
-        // Wait for the grace period to expire before exiting.
         info!("Pausing for {termination_grace_period}ms before exit");
         tokio::time::sleep(Duration::from_millis(termination_grace_period)).await;
     }
