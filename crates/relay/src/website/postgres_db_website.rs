@@ -50,6 +50,9 @@ impl FromRow for DeliveredPayload {
             },
             block_number: parse_i32_to_u64(row.get::<&str, i32>("block_number"))?,
             num_txs: parse_i32_to_usize(row.get::<&str, i32>("num_txs"))?,
+            num_blobs: parse_i32_to_usize(row.get::<&str, i32>("num_blobs"))?,
+            blob_gas_used: parse_i32_to_u64(row.get::<&str, i32>("blob_gas_used"))?,
+            excess_blob_gas: parse_i32_to_u64(row.get::<&str, i32>("excess_blob_gas"))?,
             epoch: parse_i32_to_u64(row.get::<&str, i32>("slot_number"))? / 32, //Calculate directly
         })
     }
@@ -73,7 +76,10 @@ impl WebsiteDatabaseService for PostgresDatabaseService {
             block_submission.gas_used,
             block_submission.value,
             block_submission.num_txs,
-            block_submission.block_number
+            block_submission.block_number,
+            block_submission.num_blobs,
+            block_submission.blob_gas_used,
+            block_submission.excess_blob_gas
         FROM
             delivered_payload
         INNER JOIN

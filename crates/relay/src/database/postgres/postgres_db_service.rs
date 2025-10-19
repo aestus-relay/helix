@@ -46,7 +46,7 @@ struct PendingBlockSubmissionValue {
     pub optimistic_version: OptimisticVersion,
 }
 
-const BLOCK_SUBMISSION_FIELD_COUNT: usize = 13;
+const BLOCK_SUBMISSION_FIELD_COUNT: usize = 16;
 const MAINNET_VALIDATOR_COUNT: usize = 1_100_000;
 
 fn new_validator_set() -> FxHashSet<BlsPublicKeyBytes> {
@@ -491,6 +491,9 @@ impl PostgresDatabaseService {
             num_txs: i32,
             timestamp: i64,
             first_seen: i64,
+            num_blobs: i32,
+            blob_gas_used: i32,
+            excess_blob_gas: i32,
         }
 
         let mut structured_blocks: Vec<BlockParams> = Vec::with_capacity(batch.len());
@@ -513,6 +516,9 @@ impl PostgresDatabaseService {
                 num_txs: item.submission.num_txs() as i32,
                 timestamp: item.submission.timestamp() as i64,
                 first_seen: item.trace.receive as i64,
+                num_blobs: item.submission.num_blobs() as i32,
+                blob_gas_used: item.submission.blob_gas_used() as i32,
+                excess_blob_gas: item.submission.excess_blob_gas() as i32,
             });
         }
 
@@ -533,12 +539,15 @@ impl PostgresDatabaseService {
             params.push(&blk.num_txs);
             params.push(&blk.timestamp);
             params.push(&blk.first_seen);
+            params.push(&blk.num_blobs);
+            params.push(&blk.blob_gas_used);
+            params.push(&blk.excess_blob_gas);
         }
 
         // Build and execute INSERT for block_submission
         let num_cols = BLOCK_SUBMISSION_FIELD_COUNT;
         let mut sql = String::from(
-            "INSERT INTO block_submission (block_number, slot_number, parent_hash, block_hash, builder_pubkey, proposer_pubkey, proposer_fee_recipient, gas_limit, gas_used, value, num_txs, timestamp, first_seen) VALUES ",
+            "INSERT INTO block_submission (block_number, slot_number, parent_hash, block_hash, builder_pubkey, proposer_pubkey, proposer_fee_recipient, gas_limit, gas_used, value, num_txs, timestamp, first_seen, num_blobs, blob_gas_used, excess_blob_gas) VALUES ",
         );
         let clauses: Vec<String> = (0..structured_blocks.len())
             .map(|i| {

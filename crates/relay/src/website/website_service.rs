@@ -236,6 +236,9 @@ impl WebsiteService {
             link_beaconchain: state.website_config.link_beaconchain.clone(),
             link_etherscan: state.website_config.link_etherscan.clone(),
             link_data_api: state.website_config.link_data_api.clone(),
+            electra_fork_version: alloy_primitives::hex::encode(
+                state.chain_info.context.electra_fork_version,
+            ),
             capella_fork_version: alloy_primitives::hex::encode(
                 state.chain_info.context.capella_fork_version,
             ),
