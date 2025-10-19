@@ -114,17 +114,6 @@ impl ChainInfo {
             builder_domain,
         }
     }
-
-    pub fn for_hoodi() -> Self {
-        let context = hoodi_spec();
-        Self {
-            network: Network::Hoodi,
-            genesis_validators_root: B256::from(HOODI_GENESIS_VALIDATOR_ROOT),
-            clock: hoodi_slot_clock(context.seconds_per_slot),
-            context,
-            genesis_time_in_secs: HOODI_GENESIS_TIME,
-        }
-    }
     
     pub fn for_custom(
         config: String,
