@@ -1,4 +1,8 @@
-use std::{ops::Range, sync::Arc, time::Instant};
+use std::{
+    ops::{Deref, Range},
+    sync::Arc,
+    time::Instant,
+};
 
 use alloy_primitives::{B256, U256};
 use helix_common::{
@@ -13,8 +17,9 @@ use helix_types::{
     BlockMergingPreferences, BlsPublicKeyBytes, BuilderBid, DehydratedBidSubmission,
     ExecutionPayload, ExecutionRequests, ForkName, GetPayloadResponse, PayloadAndBlobs,
     SignedBidSubmission, SignedBlindedBeaconBlock, SignedValidatorRegistration, Slot,
-    VersionedSignedProposal, mock_public_key_bytes,
+    SubmissionVersion, VersionedSignedProposal, mock_public_key_bytes,
 };
+use rustc_hash::FxHashMap;
 use tokio::sync::oneshot;
 use tracing::debug;
 
@@ -35,6 +40,22 @@ pub struct GetPayloadResultData {
     pub to_publish: VersionedSignedProposal,
     pub trace: GetPayloadTrace,
     pub fork: ForkName,
+}
+
+pub struct SubmissionData {
+    pub submission: Submission,
+    pub merging_preferences: BlockMergingPreferences,
+    pub version: SubmissionVersion,
+    pub withdrawals_root: B256,
+    pub trace: SubmissionTrace,
+}
+
+impl Deref for SubmissionData {
+    type Target = Submission;
+
+    fn deref(&self) -> &Self::Target {
+        &self.submission
+    }
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -72,6 +93,13 @@ impl Submission {
         match self {
             Submission::Full(s) => s.withdrawals_root(),
             Submission::Dehydrated(s) => s.withdrawal_root(),
+        }
+    }
+
+    pub fn parent_hash(&self) -> &B256 {
+        match self {
+            Submission::Full(s) => s.parent_hash(),
+            Submission::Dehydrated(s) => s.parent_hash(),
         }
     }
 }
@@ -196,8 +224,8 @@ pub struct SlotData {
     pub bid_slot: Slot,
     /// Data about the validator registration
     pub registration_data: BuilderGetValidatorsResponseEntry,
-    /// Payload attributes for the incoming blocks
-    pub payload_attributes: PayloadAttributesUpdate,
+    /// Parent hash -> payload attributes for the incoming blocks
+    pub payload_attributes_map: FxHashMap<B256, PayloadAttributesUpdate>,
     /// Current fork
     pub current_fork: ForkName,
     /// Inclusion list
@@ -235,11 +263,7 @@ pub enum Event {
         il: Option<InclusionListWithMetadata>,
     },
     Submission {
-        submission: Submission,
-        merging_preferences: BlockMergingPreferences,
-        withdrawals_root: B256,
-        sequence: Option<u64>,
-        trace: SubmissionTrace,
+        submission_data: SubmissionData,
         res_tx: oneshot::Sender<SubmissionResult>,
         span: tracing::Span,
         sent_at: Instant,

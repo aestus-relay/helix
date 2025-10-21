@@ -1,32 +1,44 @@
 use alloy_primitives::B256;
 use helix_common::BuilderInfo;
-use helix_types::{BlockValidationError, BlsPublicKeyBytes, SignedBidSubmission};
+use helix_types::{
+    BlockValidationError, BlsPublicKeyBytes, SignedBidSubmission, SubmissionVersion,
+};
 
-use crate::auctioneer::{context::Context, types::SlotData};
+use crate::{
+    auctioneer::{context::Context, types::SlotData},
+    housekeeper::PayloadAttributesUpdate,
+};
 
 impl Context {
-    pub fn validate_submission(
+    pub fn validate_submission<'a>(
         &mut self,
-        payload: &SignedBidSubmission,
+        submission: &SignedBidSubmission,
+        version: SubmissionVersion,
         withdrawals_root: &B256,
-        sequence: Option<u64>,
         builder_info: &BuilderInfo,
-        slot_data: &SlotData,
-        on_receive_ns: u64,
-    ) -> Result<(), BlockValidationError> {
-        if payload.slot() != self.bid_slot {
+        slot_data: &'a SlotData,
+    ) -> Result<&'a PayloadAttributesUpdate, BlockValidationError> {
+        if submission.slot() != self.bid_slot {
             return Err(BlockValidationError::SubmissionForWrongSlot {
                 expected: self.bid_slot,
-                got: payload.slot(),
+                got: submission.slot(),
             });
         }
 
-        self.staleness_check(payload.builder_public_key(), on_receive_ns, sequence)?;
-        self.check_duplicate_submission(*payload.block_hash())?;
-        self.validate_submission_data(payload, withdrawals_root, slot_data)?;
+        let Some(payload_attributes) =
+            slot_data.payload_attributes_map.get(submission.parent_hash())
+        else {
+            return Err(BlockValidationError::UknnownParentHash {
+                submission: *submission.parent_hash(),
+                have: slot_data.payload_attributes_map.keys().cloned().collect(),
+            });
+        };
+
+        self.staleness_check(submission.builder_public_key(), version)?;
+        self.validate_submission_data(submission, withdrawals_root, slot_data, payload_attributes)?;
         self.check_if_trusted_builder(builder_info, slot_data)?;
 
-        Ok(())
+        Ok(payload_attributes)
     }
 
     fn validate_submission_data(
@@ -34,6 +46,7 @@ impl Context {
         payload: &SignedBidSubmission,
         withdrawals_root: &B256,
         slot_data: &SlotData,
+        payload_attributes: &PayloadAttributesUpdate,
     ) -> Result<(), BlockValidationError> {
         if slot_data.current_fork != payload.fork_name() {
             return Err(BlockValidationError::InvalidPayloadType {
@@ -44,10 +57,10 @@ impl Context {
         // checks internal consistency of the payload
         payload.validate()?;
 
-        if slot_data.payload_attributes.payload_attributes.timestamp != payload.timestamp() {
+        if payload_attributes.timestamp != payload.timestamp() {
             return Err(BlockValidationError::IncorrectTimestamp {
                 got: payload.timestamp(),
-                expected: slot_data.payload_attributes.payload_attributes.timestamp,
+                expected: payload_attributes.timestamp,
             });
         }
 
@@ -67,7 +80,6 @@ impl Context {
             });
         }
 
-        let payload_attributes = &slot_data.payload_attributes;
         if *payload.prev_randao() != payload_attributes.prev_randao {
             return Err(BlockValidationError::PrevRandaoMismatch {
                 got: *payload.prev_randao(),
@@ -85,51 +97,22 @@ impl Context {
         Ok(())
     }
 
-    fn check_duplicate_submission(&mut self, block_hash: B256) -> Result<(), BlockValidationError> {
-        if !self.seen_block_hashes.insert(block_hash) {
-            return Err(BlockValidationError::DuplicateBlockHash { block_hash });
-        }
-
-        Ok(())
-    }
-
     fn staleness_check(
         &mut self,
         builder: &BlsPublicKeyBytes,
-        new_receive_ns: u64,
-        new_seq: Option<u64>,
+        version: SubmissionVersion,
     ) -> Result<(), BlockValidationError> {
-        if let Some((old_receive_ns, maybe_old_seq)) = self.sequence.get_mut(builder) {
-            let mut check_timestamp = true;
-
-            match (&maybe_old_seq, new_seq) {
-                (None, None) | (Some(_), None) => (),
-                (None, Some(new_seq)) => {
-                    *maybe_old_seq = Some(new_seq);
-                    check_timestamp = false
-                }
-                (Some(old_seq), Some(new_seq)) => {
-                    if new_seq > *old_seq {
-                        *maybe_old_seq = Some(new_seq);
-                        check_timestamp = false;
-                    } else {
-                        return Err(BlockValidationError::OutOfSequence {
-                            seen: *old_seq,
-                            this: new_seq,
-                        });
-                    }
-                }
-            }
-
-            if check_timestamp {
-                if new_receive_ns > *old_receive_ns {
-                    *old_receive_ns = new_receive_ns
-                } else {
-                    return Err(BlockValidationError::AlreadyProcessingNewerPayload);
-                }
+        if let Some(old_version) = self.version.get_mut(builder) {
+            if *old_version >= version {
+                return Err(BlockValidationError::OutOfSequence {
+                    seen: *old_version,
+                    this: version,
+                });
+            } else {
+                *old_version = version
             }
         } else {
-            self.sequence.insert(*builder, (new_receive_ns, new_seq));
+            self.version.insert(*builder, version);
         }
 
         Ok(())

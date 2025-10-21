@@ -12,13 +12,15 @@ use helix_common::{
     record_submission_step_ns,
     utils::{avg_duration, utcnow_ns},
 };
-use helix_types::{BlockMergingPreferences, BlsPublicKeyBytes, SignedBidSubmission};
+use helix_types::{
+    BlockMergingPreferences, BlsPublicKeyBytes, SignedBidSubmission, SubmissionVersion,
+};
 use rustc_hash::{FxHashMap, FxHashSet};
 use tracing::{info, trace};
 
 #[derive(Clone, Copy)]
 pub struct BidEntry {
-    on_receive_ns: u64,
+    version: SubmissionVersion,
     value: U256,
 
     block_hash: B256,
@@ -32,7 +34,7 @@ pub struct BidEntry {
 
 impl BidEntry {
     fn new(
-        on_receive_ns: u64,
+        version: SubmissionVersion,
         submission: &SignedBidSubmission,
         merging: BlockMergingPreferences,
     ) -> Self {
@@ -40,7 +42,7 @@ impl BidEntry {
         let payload = submission.execution_payload_ref();
 
         Self {
-            on_receive_ns,
+            version,
             value: bid_trace.value,
             block_hash: payload.block_hash,
             block_number: payload.block_number,
@@ -54,143 +56,39 @@ impl BidEntry {
 #[derive(Default)]
 struct BidSorterTelemetry {
     subs: u32,
-    top_bids: u32,
     /// Internal bid processing time of the sorter
     subs_process_time: Duration,
 }
 
-pub struct BidSorter {
-    /// Sender for ws updates, TopBidUpdate SSZ encoded
-    top_bid_tx: tokio::sync::broadcast::Sender<Bytes>,
-    /// Head slot + 1
-    curr_bid_slot: u64,
+struct ForkState {
     /// All bid entries for the current slot, used for sorting
     bids: FxHashMap<BlsPublicKeyBytes, BidEntry>,
-    /// Demoted builders in this slot for live demotions
-    demotions: FxHashSet<BlsPublicKeyBytes>,
     /// Current best bid
     curr_bid: Option<(BlsPublicKeyBytes, BidEntry)>,
-    local_telemetry: BidSorterTelemetry,
+
+    // telemetry
+    subs: u32,
+    top_bids: u32,
 }
 
-impl BidSorter {
-    pub fn new(top_bid_tx: tokio::sync::broadcast::Sender<Bytes>) -> Self {
+impl Default for ForkState {
+    fn default() -> Self {
         Self {
-            top_bid_tx,
-            curr_bid_slot: 0,
             bids: FxHashMap::with_capacity_and_hasher(250, Default::default()),
-            demotions: FxHashSet::with_capacity_and_hasher(50, Default::default()),
             curr_bid: None,
-            local_telemetry: BidSorterTelemetry::default(),
+            subs: 0,
+            top_bids: 0,
         }
     }
+}
 
-    pub fn sort(
-        &mut self,
-        submission: &SignedBidSubmission,
-        trace: &mut SubmissionTrace,
-        merging_preferences: BlockMergingPreferences,
-        is_optimistic: bool,
-    ) {
-        trace!(is_optimistic, "sorting submission");
-
-        let bid_trace = submission.bid_trace();
-        assert_eq!(bid_trace.slot, self.curr_bid_slot);
-        let bid = BidEntry::new(trace.receive, submission, merging_preferences);
-        let builder_pubkey = bid_trace.builder_pubkey;
-
-        let start = Instant::now();
-        self.process_header(builder_pubkey, bid, trace, is_optimistic);
-        let process_latency = start.elapsed();
-
-        // telemetry
-        self.local_telemetry.subs += 1;
-        self.local_telemetry.subs_process_time += process_latency;
-        BID_SORTER_PROCESS_LATENCY_US.observe(process_latency.as_micros() as f64);
-    }
-
-    // TODO: return this from .sort instead
-    pub fn is_top_bid(&self, sub: &SignedBidSubmission) -> bool {
-        self.curr_bid.as_ref().is_some_and(|c| c.1.block_hash == sub.message().block_hash)
-    }
-
-    pub fn best_mergeable(&self) -> Option<B256> {
-        let curr = self.curr_bid.as_ref()?;
-        curr.1.merging.allow_appending.then_some(curr.1.block_hash)
-    }
-
-    pub fn demote(&mut self, demoted: BlsPublicKeyBytes) {
-        if !self.demotions.insert(demoted) {
-            // already demoted
-            return;
-        }
-        self.process_demotion(demoted);
-    }
-
-    pub fn get_header(&self) -> Option<B256> {
-        self.curr_bid.as_ref().map(|b| b.1.block_hash)
-    }
-
-    fn process_header(
-        &mut self,
-        new_pubkey: BlsPublicKeyBytes,
-        new_bid: BidEntry,
-        trace: &mut SubmissionTrace,
-        is_optimistic: bool,
-    ) {
-        match self.bids.entry(new_pubkey) {
-            Entry::Occupied(mut entry) => {
-                let entry = entry.get_mut();
-                if entry.on_receive_ns >= new_bid.on_receive_ns {
-                    trace!("bid is stale, ignore");
-                    // stale
-                    return;
-                } else {
-                    *entry = new_bid;
-                }
-            }
-
-            Entry::Vacant(entry) => {
-                entry.insert(new_bid);
-            }
-        };
-
-        match &self.curr_bid {
-            Some((curr_pubkey, curr_bid)) => {
-                if new_bid.value > curr_bid.value {
-                    self.update_top_bid(new_pubkey, new_bid, Some(trace), is_optimistic);
-                } else if new_pubkey == *curr_pubkey {
-                    // this was a cancel, need to check all other bids
-                    trace!("cancel submission, traversing");
-                    self.traverse_update_top_bid(Some(trace), is_optimistic);
-                }
-            }
-
-            None => {
-                self.update_top_bid(new_pubkey, new_bid, Some(trace), is_optimistic);
-            }
-        }
-    }
-
-    /// This is only for in-slot demotions. For builder that were demoted in a past slot we don't
-    /// expect to receive optimistic bids here
-    fn process_demotion(&mut self, demoted: BlsPublicKeyBytes) {
-        // remove entire entry for this builder
-        if self.bids.remove(&demoted).is_none() {
-            return;
-        };
-
-        if let Some((curr, _)) = &self.curr_bid &&
-            *curr == demoted
-        {
-            self.traverse_update_top_bid(None, false);
-        }
-    }
-
+impl ForkState {
     fn traverse_update_top_bid(
         &mut self,
+        bid_slot: u64,
         trace: Option<&mut SubmissionTrace>,
         is_optimistic: bool,
+        top_bid_tx: &tokio::sync::broadcast::Sender<Bytes>,
     ) {
         let mut best = None;
 
@@ -206,36 +104,26 @@ impl BidSorter {
         }
 
         if let Some((best_pk, best_bid)) = best {
-            self.update_top_bid(best_pk, *best_bid, trace, is_optimistic);
+            self.update_top_bid(bid_slot, best_pk, *best_bid, trace, is_optimistic, top_bid_tx);
         } else {
             self.curr_bid = None;
         }
     }
 
-    pub(super) fn process_slot(&mut self, bid_slot: u64) {
-        if self.curr_bid_slot > 0 {
-            self.report();
-        }
-
-        self.curr_bid_slot = bid_slot;
-        self.bids.clear();
-        self.demotions.clear();
-
-        self.curr_bid = None;
-    }
-
     fn update_top_bid(
         &mut self,
+        bid_slot: u64,
         builder_pubkey: BlsPublicKeyBytes,
         bid: BidEntry,
         trace: Option<&mut SubmissionTrace>,
         is_optimistic: bool,
+        top_bid_tx: &tokio::sync::broadcast::Sender<Bytes>,
     ) {
         let now_ns = utcnow_ns();
 
         let top_bid_update = TopBidUpdate {
             timestamp: now_ns / 1_000_000,
-            slot: self.curr_bid_slot,
+            slot: bid_slot,
             block_number: bid.block_number,
             block_hash: bid.block_hash,
             parent_hash: bid.parent_hash,
@@ -245,7 +133,7 @@ impl BidSorter {
         }
         .as_ssz_bytes_fast()
         .into();
-        let _ = self.top_bid_tx.send(top_bid_update);
+        let _ = top_bid_tx.send(top_bid_update);
         trace!(?builder_pubkey, value =? bid.value, "updating best bid");
         self.curr_bid = Some((builder_pubkey, bid));
 
@@ -261,20 +149,194 @@ impl BidSorter {
                 record_submission_step_ns("decode_top_bid_slow", trace.decoded, now_ns);
             }
         }
-        self.local_telemetry.top_bids += 1;
+
+        self.top_bids += 1;
         TopBidMetrics::top_bid_update_count();
+    }
+}
+
+pub struct BidSorter {
+    /// Sender for ws updates, TopBidUpdate SSZ encoded
+    top_bid_tx: tokio::sync::broadcast::Sender<Bytes>,
+    /// Head slot + 1
+    curr_bid_slot: u64,
+    /// Parent hash -> fork state
+    forks: FxHashMap<B256, ForkState>,
+    /// Demoted builders in this slot for live demotions
+    demotions: FxHashSet<BlsPublicKeyBytes>,
+    local_telemetry: BidSorterTelemetry,
+}
+
+impl BidSorter {
+    pub fn new(top_bid_tx: tokio::sync::broadcast::Sender<Bytes>) -> Self {
+        Self {
+            top_bid_tx,
+            curr_bid_slot: 0,
+            forks: FxHashMap::default(),
+            demotions: FxHashSet::with_capacity_and_hasher(50, Default::default()),
+            local_telemetry: BidSorterTelemetry::default(),
+        }
+    }
+
+    /// Sort the bid and returns whether it became the top bid
+    pub fn sort(
+        &mut self,
+        version: SubmissionVersion,
+        submission: &SignedBidSubmission,
+        trace: &mut SubmissionTrace,
+        merging_preferences: BlockMergingPreferences,
+        is_optimistic: bool,
+    ) -> bool {
+        trace!(is_optimistic, "sorting submission");
+
+        let bid_trace = submission.bid_trace();
+        assert_eq!(bid_trace.slot, self.curr_bid_slot);
+        let bid = BidEntry::new(version, submission, merging_preferences);
+        let builder_pubkey = bid_trace.builder_pubkey;
+
+        let start = Instant::now();
+        let is_top_bid = self.process_header(builder_pubkey, bid, trace, is_optimistic);
+        let process_latency = start.elapsed();
+
+        // telemetry
+        self.local_telemetry.subs += 1;
+        self.local_telemetry.subs_process_time += process_latency;
+        BID_SORTER_PROCESS_LATENCY_US.observe(process_latency.as_micros() as f64);
+
+        is_top_bid
+    }
+
+    // TODO: should we return one hash per fork?
+    pub fn best_mergeable(&self) -> Option<B256> {
+        let curr = self.forks.iter().next()?.1.curr_bid.as_ref()?;
+        curr.1.merging.allow_appending.then_some(curr.1.block_hash)
+    }
+
+    pub fn demote(&mut self, demoted: BlsPublicKeyBytes) {
+        if !self.demotions.insert(demoted) {
+            // already demoted
+            return;
+        }
+        self.process_demotion(demoted);
+    }
+
+    pub fn get_header(&self, parent_hash: &B256) -> Option<B256> {
+        self.forks.get(parent_hash).and_then(|s| s.curr_bid.as_ref().map(|b| b.1.block_hash))
+    }
+
+    fn process_header(
+        &mut self,
+        new_pubkey: BlsPublicKeyBytes,
+        new_bid: BidEntry,
+        trace: &mut SubmissionTrace,
+        is_optimistic: bool,
+    ) -> bool {
+        let state = self.forks.entry(new_bid.parent_hash).or_default();
+        match state.bids.entry(new_pubkey) {
+            Entry::Occupied(mut entry) => {
+                let entry = entry.get_mut();
+                if entry.version >= new_bid.version {
+                    trace!("bid is stale, ignore");
+                    // stale
+                    return false;
+                } else {
+                    *entry = new_bid;
+                }
+            }
+
+            Entry::Vacant(entry) => {
+                entry.insert(new_bid);
+            }
+        };
+
+        state.subs += 1;
+        match &state.curr_bid {
+            Some((curr_pubkey, curr_bid)) => {
+                if new_bid.value > curr_bid.value {
+                    state.update_top_bid(
+                        self.curr_bid_slot,
+                        new_pubkey,
+                        new_bid,
+                        Some(trace),
+                        is_optimistic,
+                        &self.top_bid_tx,
+                    );
+
+                    true
+                } else if new_pubkey == *curr_pubkey {
+                    // this was a cancel, need to check all other bids
+                    trace!("cancel submission, traversing");
+                    state.traverse_update_top_bid(
+                        self.curr_bid_slot,
+                        Some(trace),
+                        is_optimistic,
+                        &self.top_bid_tx,
+                    );
+
+                    false
+                } else {
+                    // new bid lower than best
+                    false
+                }
+            }
+
+            None => {
+                state.update_top_bid(
+                    self.curr_bid_slot,
+                    new_pubkey,
+                    new_bid,
+                    Some(trace),
+                    is_optimistic,
+                    &self.top_bid_tx,
+                );
+
+                true
+            }
+        }
+    }
+
+    /// This is only for in-slot demotions. For builder that were demoted in a past slot we don't
+    /// expect to receive optimistic bids here
+    fn process_demotion(&mut self, demoted: BlsPublicKeyBytes) {
+        for state in self.forks.values_mut() {
+            // remove entire entry for this builder
+            if state.bids.remove(&demoted).is_none() {
+                continue;
+            }
+
+            if let Some((curr, _)) = &state.curr_bid &&
+                *curr == demoted
+            {
+                state.traverse_update_top_bid(self.curr_bid_slot, None, false, &self.top_bid_tx);
+            }
+        }
+    }
+
+    pub(super) fn process_slot(&mut self, bid_slot: u64) {
+        if self.curr_bid_slot > 0 {
+            self.report();
+        }
+
+        self.curr_bid_slot = bid_slot;
+        self.demotions.clear();
+        self.forks.clear();
     }
 
     pub(super) fn report(&mut self) {
         let tel = std::mem::take(&mut self.local_telemetry);
 
         let avg_sub_process = avg_duration(tel.subs_process_time, tel.subs);
+        let fork_report: Vec<_> = self
+            .forks
+            .iter()
+            .map(|(k, s)| format!("parent: {k}, subs: {}, top_bids: {}", s.subs, s.top_bids))
+            .collect();
 
         info!(
             slot = self.curr_bid_slot,
             valid_subs = tel.subs,
             ?avg_sub_process,
-            top_bids = tel.top_bids,
+            ?fork_report,
             "bid sorter telemetry"
         )
     }

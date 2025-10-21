@@ -35,7 +35,7 @@ impl<A: Api> ProposerApi<A> {
     /// The function returns a JSON response containing the best bid if found.
     ///
     /// Implements this API: <https://ethereum.github.io/builder-specs/#/Builder/getHeader>
-    #[tracing::instrument(skip_all, err(level = tracing::Level::TRACE), fields(id =% extract_request_id(&headers), slot = params.slot))]
+    #[tracing::instrument(skip_all, err(level = tracing::Level::TRACE), fields(id =% extract_request_id(&headers), slot = params.slot, parent_hash =? params.parent_hash))]
     pub async fn get_header(
         Extension(proposer_api): Extension<Arc<ProposerApi<A>>>,
         Extension(timings): Extension<RequestTimings>,
@@ -183,9 +183,26 @@ impl<A: Api> ProposerApi<A> {
         );
 
         let fork = proposer_api.chain_info.current_fork_name();
-
+        let payload_and_blobs = bid.payload_and_blobs.clone();
         let bid = bid.into_builder_bid_slow();
         let signed_bid = resign_builder_bid(bid, &proposer_api.signing_context, fork);
+
+        if proposer_api.relay_config.gossip_payload_on_header {
+            spawn_tracked!(
+                async move {
+                    info!("gossiping payload");
+                    proposer_api
+                        .gossip_payload(
+                            params.slot.into(),
+                            &params.pubkey,
+                            &payload_and_blobs,
+                            fork,
+                        )
+                        .await;
+                }
+                .in_current_span()
+            );
+        }
 
         let signed_bid = serde_json::to_value(signed_bid)?;
         info!(block_hash =% bid_block_hash, ?value, "delivering bid");
