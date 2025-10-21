@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use rustls::crypto::{ring, CryptoProvider};
 
-use helix_common::{local_cache::LocalCache, K8sLeaderElectionConfig};
+use helix_common::{chain_info::ChainInfo, local_cache::LocalCache, K8sLeaderElectionConfig};
 
 use crate::housekeeper::CurrentSlotInfo;
 use k8s_openapi::api::coordination::v1::Lease;
@@ -59,6 +59,7 @@ pub struct LeaseManager {
     pod_name: String,
     is_leader: Arc<AtomicBool>,
     current_slot_info: CurrentSlotInfo,
+    chain_info: Arc<ChainInfo>,
     auctioneer: Arc<LocalCache>,
     shutdown_signal: Arc<AtomicBool>,
     leadership_acquired_slot: Arc<RwLock<Option<u64>>>,
@@ -70,6 +71,7 @@ impl LeaseManager {
         config: K8sLeaderElectionConfig,
         is_leader: Arc<AtomicBool>,
         current_slot_info: &CurrentSlotInfo,
+        chain_info: Arc<ChainInfo>,
         auctioneer: &Arc<LocalCache>,
     ) -> Result<Self, LeaseError> {
         // Ensure TLS provider is installed (required for kube-rs)
@@ -98,6 +100,7 @@ impl LeaseManager {
             namespace,
             pod_name,
             is_leader,
+            chain_info,
             current_slot_info: current_slot_info.clone(),
             auctioneer: auctioneer.clone(),
             shutdown_signal: Arc::new(AtomicBool::new(false)),
@@ -372,6 +375,7 @@ impl LeaseManager {
                         // Wait for slot completion before rotating
                         wait_for_safe_transition(
                             &self.current_slot_info,
+                            &self.chain_info,
                             &self.auctioneer,
                             self.config.slot_completion_timeout_seconds,
                             TransitionReason::Rotation,
@@ -546,6 +550,7 @@ impl LeaseManager {
         // Wait for current slot to complete
         wait_for_safe_transition(
             &self.current_slot_info,
+            &self.chain_info,
             &self.auctioneer,
             self.config.slot_completion_timeout_seconds,
             TransitionReason::Shutdown,
@@ -572,6 +577,7 @@ impl LeaseManager {
             pod_name: self.pod_name.clone(),
             is_leader: self.is_leader.clone(),
             current_slot_info: self.current_slot_info.clone(),
+            chain_info: self.chain_info.clone(),
             auctioneer: self.auctioneer.clone(),
             shutdown_signal: self.shutdown_signal.clone(),
             leadership_acquired_slot: self.leadership_acquired_slot.clone(),
