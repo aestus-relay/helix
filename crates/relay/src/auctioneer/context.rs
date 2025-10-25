@@ -11,10 +11,12 @@ use alloy_primitives::{B256, U256};
 use flux::spine::{SpineProducer, SpineProducers};
 use flux_utils::SharedVector;
 use helix_common::{
+    BuilderConfig,
     BuilderInfo, RelayConfig,
     chain_info::ChainInfo,
     local_cache::LocalCache,
     metrics::{CACHE_SIZE, SimulatorMetrics},
+    spawn_tracked,
 };
 use helix_database::handle::DbHandle;
 use helix_types::{BlsPublicKeyBytes, HydrationCache, Slot, SubmissionVersion};
@@ -130,7 +132,38 @@ impl<B: BidAdjustor> Context<B> {
     }
 
     pub fn builder_info(&self, builder: &BlsPublicKeyBytes) -> BuilderInfo {
-        self.cache.get_builder_info(builder).unwrap_or_else(|| self.unknown_builder_info.clone())
+        match self.cache.get_builder_info(builder) {
+            Some(info) => info,
+            None => {
+                // First time seeing this builder - auto-register with basic access
+                warn!(
+                    builder=?builder,
+                    "New builder detected - auto-registering with basic access"
+                );
+                
+                let default_info = self.unknown_builder_info.clone();
+                
+                // Update cache immediately (prevents repeated warnings)
+                let builder_config = BuilderConfig {
+                    pub_key: *builder,
+                    builder_info: default_info.clone(),
+                };
+                self.cache.update_builder_infos(&[builder_config], false);
+                
+                // Persist to database (survives cache refresh; DbHandle sends async to DB worker)
+                let db = self.db.clone();
+                let builder_clone = *builder;
+                let info_clone = default_info.clone();
+                spawn_tracked!(async move {
+                    db.store_builders_info(vec![BuilderConfig {
+                        pub_key: builder_clone,
+                        builder_info: info_clone,
+                    }]);
+                });
+                
+                default_info
+            }
+        }
     }
 
     /// 1. Check whether we should demote the builder, this is processed even if the result comes
