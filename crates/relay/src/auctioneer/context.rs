@@ -9,7 +9,7 @@ use std::{
 
 use alloy_primitives::{B256, U256};
 use helix_common::{
-    BuilderInfo, RelayConfig,
+    BuilderConfig, BuilderInfo, RelayConfig,
     chain_info::ChainInfo,
     local_cache::LocalCache,
     metrics::{CACHE_SIZE, SimulatorMetrics},
@@ -129,7 +129,41 @@ impl<B: BidAdjustor> Context<B> {
     }
 
     pub fn builder_info(&self, builder: &BlsPublicKeyBytes) -> BuilderInfo {
-        self.cache.get_builder_info(builder).unwrap_or_else(|| self.unknown_builder_info.clone())
+        match self.cache.get_builder_info(builder) {
+            Some(info) => info,
+            None => {
+                // First time seeing this builder - auto-register with basic access
+                warn!(
+                    builder=?builder,
+                    "New builder detected - auto-registering with basic access"
+                );
+                
+                let default_info = self.unknown_builder_info.clone();
+                
+                // Update cache immediately (prevents repeated warnings)
+                let builder_config = BuilderConfig {
+                    pub_key: *builder,
+                    builder_info: default_info.clone(),
+                };
+                self.cache.update_builder_infos(&[builder_config], false);
+                
+                // Persist to database async (survives cache refresh)
+                let db = self.db.clone();
+                let builder_clone = *builder;
+                let info_clone = default_info.clone();
+                spawn_tracked!(async move {
+                    if let Err(e) = db.store_builder_info(&builder_clone, &info_clone).await {
+                        error!(
+                            builder=?builder_clone,
+                            error=%e,
+                            "Failed to persist auto-registered builder to database"
+                        );
+                    }
+                });
+                
+                default_info
+            }
+        }
     }
 
     /// 1. Check whether we should demote the builder, this is processed even if the result comes
