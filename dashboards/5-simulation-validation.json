@@ -1,0 +1,323 @@
+{
+  "title": "Helix - Simulation & Validation",
+  "tags": ["helix", "simulation", "validation"],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "refresh": "10s",
+  "time": {
+      "from": "now-15m",
+      "to": "now"
+  },
+  "templating": {
+    "list": [
+        {
+          "name": "datasource",
+          "label": "Prometheus",
+          "type": "datasource",
+          "query": "prometheus"
+        },
+        {
+          "name": "postgres_datasource",
+          "label": "TimescaleDB",
+          "type": "datasource",
+          "query": "postgres"
+        },
+        {
+          "name": "loki_datasource",
+          "label": "Loki",
+          "type": "datasource",
+          "query": "loki"
+        },
+        {
+          "name": "namespace",
+          "label": "Namespace",
+          "type": "constant",
+          "current": {
+            "value": "relay-helix",
+            "text": "relay-helix"
+          },
+          "hide": 2
+        },
+        {
+          "name": "deployment",
+          "label": "Deployment",
+          "type": "custom",
+          "query": "relay-api-auction-helix,relay-api-registration-helix,relay-api-data-helix",
+          "current": {
+            "text": "All",
+            "value": "$__all"
+          },
+          "multi": true,
+          "includeAll": true,
+          "allValue": ".*"
+        }
+    ]
+  },
+  "panels": [
+      {
+        "id": 1,
+        "title": "Simulation Success Rate",
+        "type": "stat",
+        "gridPos": {"h": 6, "w": 6, "x": 0, "y": 0},
+        "targets": [
+          {
+            "expr": "sum(rate(helix_simulator_status_total{is_success=\"true\"}[$__rate_interval])) / sum(rate(helix_simulator_status_total[$__rate_interval])) * 100",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            }
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": null, "color": "red"},
+                {"value": 80, "color": "yellow"},
+                {"value": 95, "color": "green"}
+              ]
+            },
+            "decimals": 2
+          }
+        }
+      },
+      {
+        "id": 2,
+        "title": "Total Simulations",
+        "type": "stat",
+        "gridPos": {"h": 6, "w": 6, "x": 6, "y": 0},
+        "targets": [
+          {
+            "expr": "sum(increase(helix_simulator_count_total[$__range]))",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            }
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "color": {
+              "fixedColor": "blue",
+              "mode": "fixed"
+            }
+          }
+        }
+      },
+      {
+        "id": 3,
+        "title": "Builder Demotions",
+        "type": "stat",
+        "gridPos": {"h": 6, "w": 6, "x": 12, "y": 0},
+        "targets": [
+          {
+            "expr": "increase(helix_builder_demotion_count_total[$__range])",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            }
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "color": {
+              "fixedColor": "red",
+              "mode": "fixed"
+            },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": null, "color": "green"},
+                {"value": 1, "color": "yellow"},
+                {"value": 5, "color": "red"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 4,
+        "title": "Block Merge Success Rate",
+        "type": "stat",
+        "gridPos": {"h": 6, "w": 6, "x": 18, "y": 0},
+        "targets": [
+          {
+            "expr": "sum(rate(helix_block_merge_status_total{is_success=\"true\"}[$__rate_interval])) / sum(rate(helix_block_merge_status_total[$__rate_interval])) * 100",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            }
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": null, "color": "red"},
+                {"value": 80, "color": "yellow"},
+                {"value": 95, "color": "green"}
+              ]
+            },
+            "decimals": 1
+          }
+        }
+      },
+      {
+        "id": 5,
+        "title": "Simulation Latency by Simulator",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 6},
+        "targets": [
+          {
+            "expr": "avg by (simulator) (helix_sim_latency_secs{simulator=~\".*\"})",
+            "legendFormat": "{{simulator}}",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            }
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s",
+            "custom": {
+              "lineWidth": 2
+            }
+          }
+        }
+      },
+      {
+        "id": 6,
+        "title": "Simulator Sync Status",
+        "type": "stat",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 6},
+        "targets": [
+          {
+            "expr": "helix_simulator_synced{simulator=~\".*\"}",
+            "legendFormat": "{{simulator}}",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            }
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [
+              {
+                "type": "value",
+                "options": {
+                  "0": {
+                    "text": "Not Synced",
+                    "color": "red"
+                  }
+                }
+              },
+              {
+                "type": "value",
+                "options": {
+                  "1": {
+                    "text": "Synced",
+                    "color": "green"
+                  }
+                }
+              }
+            ],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": null, "color": "red"},
+                {"value": 1, "color": "green"}
+              ]
+            }
+          }
+        },
+        "options": {
+          "colorMode": "background"
+        }
+      },
+      {
+        "id": 7,
+        "title": "Recent Demotion Reasons (from logs)",
+        "type": "logs",
+        "gridPos": {"h": 10, "w": 12, "x": 0, "y": 14},
+        "targets": [
+          {
+            "expr": "{namespace=\"${namespace}\", app=~\"${deployment}\"} |~ \"Demoting builder\" | json",
+            "datasource": {
+              "type": "loki",
+              "uid": "${loki_datasource}"
+            }
+          }
+        ],
+        "options": {
+          "showTime": true,
+          "showLabels": true,
+          "wrapLogMessage": true
+        }
+      },
+      {
+        "id": 8,
+        "title": "Demoted Builders (Last 24h)",
+        "type": "table",
+        "gridPos": {"h": 10, "w": 12, "x": 12, "y": 14},
+        "targets": [
+          {
+            "rawSql": "SELECT encode(bs.builder_pubkey, 'hex') as builder, se.error as reason, COUNT(*) as count FROM block_submission bs JOIN simulation_error se ON bs.block_hash = se.block_hash WHERE bs.created_at > now() - interval '24 hours' GROUP BY bs.builder_pubkey, se.error ORDER BY count DESC LIMIT 20",
+            "format": "table",
+            "datasource": {
+              "type": "postgres",
+              "uid": "${postgres_datasource}"
+            }
+          }
+        ],
+        "fieldConfig": {
+          "overrides": [
+            {
+              "matcher": {
+                "id": "byName",
+                "options": "builder"
+              },
+              "properties": [
+                {
+                  "id": "custom.width",
+                  "value": 500
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "id": 9,
+        "title": "Block Merge Latency",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 24},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, sum by (simulator, le) (rate(helix_block_merge_latency_secs_bucket[$__rate_interval])))",
+            "legendFormat": "{{simulator}} (p95)",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            }
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s",
+            "custom": {
+              "lineWidth": 2
+            }
+          }
+        }
+      }
+    ]
+  }
+}

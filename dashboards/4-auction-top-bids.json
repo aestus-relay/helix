@@ -1,0 +1,302 @@
+{
+  "title": "Helix - Auction & Top Bids",
+  "tags": ["helix", "auction", "top-bid"],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "refresh": "1s",
+  "time": {
+      "from": "now-5m",
+      "to": "now"
+  },
+  "templating": {
+    "list": [
+        {
+          "name": "datasource",
+          "label": "Prometheus",
+          "type": "datasource",
+          "query": "prometheus"
+        },
+        {
+          "name": "postgres_datasource",
+          "label": "TimescaleDB",
+          "type": "datasource",
+          "query": "postgres"
+        },
+        {
+          "name": "namespace",
+          "label": "Namespace",
+          "type": "constant",
+          "current": {
+            "value": "relay-helix",
+            "text": "relay-helix"
+          },
+          "hide": 2
+        }
+    ]
+  },
+  "panels": [
+      {
+        "id": 1,
+        "title": "Top Bid Updates per Minute",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+        "targets": [
+          {
+            "expr": "rate(helix_top_bid_update_count[$__rate_interval]) * 60",
+            "legendFormat": "Updates/min",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            }
+          }
+        ],
+        "description": "Rate of top bid changes across all forks",
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "custom": {
+              "drawStyle": "line",
+              "lineWidth": 2,
+              "fillOpacity": 20
+            }
+          }
+        }
+      },
+      {
+        "id": 2,
+        "title": "Active Top Bid WebSocket Connections",
+        "type": "stat",
+        "gridPos": {"h": 8, "w": 6, "x": 12, "y": 0},
+        "targets": [
+          {
+            "expr": "helix_top_bid_connections",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            }
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": null, "color": "red"},
+                {"value": 1, "color": "green"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 3,
+        "title": "Total Top Bid Updates",
+        "type": "stat",
+        "gridPos": {"h": 8, "w": 6, "x": 18, "y": 0},
+        "targets": [
+          {
+            "expr": "helix_top_bid_update_count",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            }
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "color": {
+              "fixedColor": "blue",
+              "mode": "fixed"
+            }
+          }
+        }
+      },
+      {
+        "id": 4,
+        "title": "Time to Top Bid - Optimistic Path (p50, p95, p99)",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.50, sum(rate(helix_submission_trace_latency_us_bucket{step=\"recv_top_bid\"}[$__rate_interval])) by (le)) / 1000",
+            "legendFormat": "p50",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            }
+          },
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(helix_submission_trace_latency_us_bucket{step=\"recv_top_bid\"}[$__rate_interval])) by (le)) / 1000",
+            "legendFormat": "p95",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            }
+          },
+          {
+            "expr": "histogram_quantile(0.99, sum(rate(helix_submission_trace_latency_us_bucket{step=\"recv_top_bid\"}[$__rate_interval])) by (le)) / 1000",
+            "legendFormat": "p99",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            }
+          }
+        ],
+        "description": "Time from first packet received to becoming top bid (optimistic submissions)",
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ms",
+            "custom": {
+              "lineWidth": 2
+            }
+          }
+        }
+      },
+      {
+        "id": 5,
+        "title": "Time to Top Bid - Non-Optimistic Path (p95)",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(helix_submission_trace_latency_us_bucket{step=\"recv_top_bid_slow\"}[$__rate_interval])) by (le)) / 1000",
+            "legendFormat": "p95",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            }
+          }
+        ],
+        "description": "Time from first packet to top bid for non-optimistic (post-simulation) submissions",
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ms",
+            "custom": {
+              "lineWidth": 2
+            }
+          }
+        }
+      },
+      {
+        "id": 6,
+        "title": "Bid Sorter Processing Latency (p95, p99)",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(helix_bid_sorter_process_latency_us_bucket[$__rate_interval])) by (le))",
+            "legendFormat": "p95",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            }
+          },
+          {
+            "expr": "histogram_quantile(0.99, sum(rate(helix_bid_sorter_process_latency_us_bucket[$__rate_interval])) by (le))",
+            "legendFormat": "p99",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            }
+          }
+        ],
+        "description": "Internal bid sorting processing time",
+        "fieldConfig": {
+          "defaults": {
+            "unit": "µs",
+            "custom": {
+              "lineWidth": 2
+            }
+          }
+        }
+      },
+      {
+        "id": 7,
+        "title": "Top Bid Value per Slot (ETH)",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+        "targets": [
+          {
+            "rawSql": "SELECT date_trunc('minute', created_at) as time, slot_number, MAX(value::numeric / 1e18) as max_value FROM block_submission WHERE created_at > now() - interval '1 hour' GROUP BY time, slot_number ORDER BY time",
+            "format": "time_series",
+            "datasource": {
+              "type": "postgres",
+              "uid": "${postgres_datasource}"
+            }
+          }
+        ],
+        "description": "Maximum bid value per slot in ETH",
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ETH",
+            "custom": {
+              "lineWidth": 2,
+              "fillOpacity": 10
+            }
+          }
+        }
+      },
+      {
+        "id": 8,
+        "title": "Hydration Cache Hit Rate",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24},
+        "targets": [
+          {
+            "expr": "sum by (order_type) (rate(helix_hydration_cache_hits[$__rate_interval]))",
+            "legendFormat": "{{order_type}}",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            }
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ops",
+            "custom": {
+              "lineWidth": 2
+            }
+          }
+        }
+      },
+      {
+        "id": 9,
+        "title": "Bid Creation & Signing Latency",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(helix_bid_creation_latency_us_bucket[$__rate_interval])) by (le))",
+            "legendFormat": "Bid Creation (p95)",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            }
+          },
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(helix_bid_signing_latency_us_bucket[$__rate_interval])) by (le))",
+            "legendFormat": "Bid Signing (p95)",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            }
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "µs",
+            "custom": {
+              "lineWidth": 2
+            }
+          }
+        }
+      }
+    ]
+  }
+}

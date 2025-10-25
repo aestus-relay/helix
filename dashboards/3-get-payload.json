@@ -1,0 +1,278 @@
+{
+  "title": "Helix - Get Payload Analysis",
+  "tags": ["helix", "proposer", "get_payload"],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "refresh": "5s",
+  "time": {
+      "from": "now-5m",
+      "to": "now"
+  },
+  "templating": {
+    "list": [
+        {
+          "name": "datasource",
+          "label": "Prometheus",
+          "type": "datasource",
+          "query": "prometheus"
+        },
+        {
+          "name": "loki_datasource",
+          "label": "Loki",
+          "type": "datasource",
+          "query": "loki"
+        },
+        {
+          "name": "namespace",
+          "label": "Namespace",
+          "type": "constant",
+          "current": {
+            "value": "relay-helix",
+            "text": "relay-helix"
+          },
+          "hide": 2
+        },
+        {
+          "name": "deployment",
+          "label": "Deployment",
+          "type": "custom",
+          "query": "relay-api-auction-helix,relay-api-registration-helix,relay-api-data-helix",
+          "current": {
+            "text": "All",
+            "value": "$__all"
+          },
+          "multi": true,
+          "includeAll": true,
+          "allValue": ".*"
+        }
+    ]
+  },
+  "panels": [
+      {
+        "id": 1,
+        "title": "Get Payload Requests per Slot",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+        "targets": [
+          {
+            "expr": "sum(increase(helix_request_status_total{exported_endpoint=~\"/eth/v1/builder/blinded_blocks.*\"}[12s]))",
+            "legendFormat": "Requests/slot",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            }
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "custom": {
+              "drawStyle": "bars"
+            }
+          }
+        }
+      },
+      {
+        "id": 2,
+        "title": "Payload Delivery Success Rate",
+        "type": "stat",
+        "gridPos": {"h": 8, "w": 6, "x": 12, "y": 0},
+        "targets": [
+          {
+            "expr": "sum(rate(helix_request_status_total{exported_endpoint=~\"/eth/v1/builder/blinded_blocks.*\", http_status_code=\"200\"}[$__rate_interval])) / sum(rate(helix_request_status_total{exported_endpoint=~\"/eth/v1/builder/blinded_blocks.*\"}[$__rate_interval])) * 100",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            }
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": null, "color": "red"},
+                {"value": 95, "color": "yellow"},
+                {"value": 99, "color": "green"}
+              ]
+            },
+            "decimals": 2
+          }
+        }
+      },
+      {
+        "id": 3,
+        "title": "Total Payloads Delivered",
+        "type": "stat",
+        "gridPos": {"h": 8, "w": 6, "x": 18, "y": 0},
+        "targets": [
+          {
+            "expr": "sum(increase(helix_request_status_total{exported_endpoint=~\"/eth/v1/builder/blinded_blocks.*\", http_status_code=\"200\"}[$__range]))",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            }
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": null, "color": "blue"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 4,
+        "title": "Get Payload Latency Breakdown (p95)",
+        "type": "timeseries",
+        "gridPos": {"h": 10, "w": 24, "x": 0, "y": 8},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(helix_get_payload_trace_latency_us_bucket{step=\"read_body\"}[$__rate_interval])) by (le)) / 1000",
+            "legendFormat": "Read Body",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            }
+          },
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(helix_get_payload_trace_latency_us_bucket{step=\"decode\"}[$__rate_interval])) by (le)) / 1000",
+            "legendFormat": "Decode",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            }
+          },
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(helix_get_payload_trace_latency_us_bucket{step=\"proposer_index_validated\"}[$__rate_interval])) by (le)) / 1000",
+            "legendFormat": "Proposer Index Validation",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            }
+          },
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(helix_get_payload_trace_latency_us_bucket{step=\"signature_validated\"}[$__rate_interval])) by (le)) / 1000",
+            "legendFormat": "Signature Validation",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            }
+          },
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(helix_get_payload_trace_latency_us_bucket{step=\"payload_fetched\"}[$__rate_interval])) by (le)) / 1000",
+            "legendFormat": "Payload Fetched",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            }
+          },
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(helix_get_payload_trace_latency_us_bucket{step=\"beacon_client_broadcast\"}[$__rate_interval])) by (le)) / 1000",
+            "legendFormat": "Beacon Broadcast",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            }
+          },
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(helix_get_payload_trace_latency_us_bucket{step=\"broadcaster_block_broadcast\"}[$__rate_interval])) by (le)) / 1000",
+            "legendFormat": "Broadcaster Broadcast",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            }
+          }
+        ],
+        "description": "Step-by-step latency breakdown for get_payload processing",
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ms",
+            "custom": {
+              "lineWidth": 2
+            }
+          }
+        },
+        "options": {
+          "legend": {
+            "displayMode": "table",
+            "placement": "right",
+            "calcs": ["lastNotNull", "mean", "max"]
+          }
+        }
+      },
+      {
+        "id": 5,
+        "title": "Beacon Broadcast Latency (p95, p99)",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 18},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(helix_get_payload_trace_latency_us_bucket{step=\"beacon_client_broadcast\"}[$__rate_interval])) by (le)) / 1000",
+            "legendFormat": "p95",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            }
+          },
+          {
+            "expr": "histogram_quantile(0.99, sum(rate(helix_get_payload_trace_latency_us_bucket{step=\"beacon_client_broadcast\"}[$__rate_interval])) by (le)) / 1000",
+            "legendFormat": "p99",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            }
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ms",
+            "custom": {
+              "lineWidth": 2
+            }
+          }
+        }
+      },
+      {
+        "id": 6,
+        "title": "Failed Get Payload Requests (Logs)",
+        "type": "logs",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 18},
+        "targets": [
+          {
+            "expr": "{namespace=\"${namespace}\", app=~\"${deployment}\"} |~ \"get_payload\" |~ \"err\" | json",
+            "datasource": {
+              "type": "loki",
+              "uid": "${loki_datasource}"
+            }
+          }
+        ],
+        "options": {
+          "showTime": true,
+          "showLabels": false,
+          "showCommonLabels": false,
+          "wrapLogMessage": true
+        }
+      },
+      {
+        "id": 7,
+        "title": "🔖 BACKLOG: Get Payload by IP Address",
+        "type": "text",
+        "gridPos": {"h": 4, "w": 24, "x": 0, "y": 26},
+        "options": {
+          "mode": "markdown",
+          "content": "**Future Enhancement**: Same as get_header - requires Envoy log correlation with x-request-id"
+        }
+      }
+    ]
+  }
+}
