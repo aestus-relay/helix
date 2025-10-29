@@ -17,6 +17,7 @@ use kube::{
     Client,
 };
 use parking_lot::RwLock;
+use rand::Rng;
 use tokio::time::sleep;
 use tracing::{debug, error, info, warn};
 
@@ -26,14 +27,37 @@ use super::{
 };
 
 // Constants for lease management
-const LEADERSHIP_VERIFICATION_DELAY_MS: u64 = 100;
 const ROTATION_BACKOFF_MULTIPLIER: f64 = 3.0;
+const RETRY_JITTER_PERCENT: f64 = 0.3; // 30% jitter to prevent synchronized retries
 
 /// Ensure TLS crypto provider is installed (required for kube-rs)
 fn ensure_tls_provider() {
     if CryptoProvider::get_default().is_none() {
         let _ = ring::default_provider().install_default();
     }
+}
+
+/// Calculate random jitter to prevent synchronized retries
+/// Returns a value between 0.0 and RETRY_JITTER_PERCENT
+fn calculate_random_jitter() -> f64 {
+    let mut rng = rand::rng();
+    rng.random_range(0.0..RETRY_JITTER_PERCENT)
+}
+
+/// Sleep with jittered retry period to prevent thundering herd
+/// Jitter spreads out follower retry attempts to reduce lease contention
+async fn sleep_with_jitter(base_interval_secs: f64) {
+    let jitter = calculate_random_jitter();
+    let jittered_interval = base_interval_secs * (1.0 + jitter);
+    
+    debug!(
+        base_interval = base_interval_secs,
+        jitter_pct = jitter * 100.0,
+        jittered_interval,
+        "Sleeping with jitter to prevent synchronized retries"
+    );
+    
+    sleep(Duration::from_secs_f64(jittered_interval)).await;
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -134,16 +158,10 @@ impl LeaseManager {
             match self.try_acquire_lease().await {
                 Ok(acquired) => {
                     if acquired {
+                        // Atomic verification: update_lease() already verified we're the holder
+                        // No separate verification needed - if update_lease() returns true,
+                        // we already confirmed ownership from the patch response
                         self.on_elected_leader();
-                        
-                        // Verify leadership after a brief pause (prevents split-brain during startup)
-                        if !self.verify_leadership().await {
-                            // Verification failed - step down immediately
-                            self.on_lost_leadership();
-                            info!("Leadership verification failed, retrying acquisition");
-                            sleep(Duration::from_secs_f64(self.config.retry_period_seconds)).await;
-                            continue;
-                        }
                         
                         // Keep renewing until we lose it or rotate
                         let result = self.renew_lease_loop().await;
@@ -162,21 +180,21 @@ impl LeaseManager {
                             );
                             sleep(Duration::from_secs_f64(backoff_secs)).await;
                         } else {
-                            // Error/lost lease unexpectedly - retry sooner
+                            // Error/lost lease unexpectedly - retry sooner with jitter
                             if let Err(err) = result {
                                 error!(%err, "Lease renewal failed");
                             }
-                            sleep(Duration::from_secs_f64(self.config.retry_period_seconds)).await;
+                            sleep_with_jitter(self.config.retry_period_seconds).await;
                         }
                     } else {
-                        // We're a follower, wait before retrying
-                        sleep(Duration::from_secs_f64(self.config.retry_period_seconds)).await;
+                        // We're a follower, wait before retrying with jitter
+                        sleep_with_jitter(self.config.retry_period_seconds).await;
                     }
                 }
                 Err(err) => {
                     error!(%err, "Failed to acquire lease");
                     LEASE_FAILURES_TOTAL.inc();
-                    sleep(Duration::from_secs_f64(self.config.retry_period_seconds)).await;
+                    sleep_with_jitter(self.config.retry_period_seconds).await;
                 }
             }
         }
@@ -294,6 +312,9 @@ impl LeaseManager {
     }
 
     /// Update an existing lease
+    /// Returns Ok(true) if we successfully acquired/renewed and are the holder
+    /// Returns Ok(false) if there was a conflict or we're not the holder
+    /// Uses atomic verification: verifies ownership from the patch response (no separate API call)
     async fn update_lease(&self, leases: Api<Lease>, is_acquisition: bool) -> Result<bool, LeaseError> {
         let now = MicroTime(Utc::now());
         
@@ -316,11 +337,37 @@ impl LeaseManager {
             .patch(
                 &self.config.lease_name,
                 &PatchParams::default(),
-                &Patch::Merge(&patch),
+                &Patch::Strategic(&patch),  // Strategic merge handles concurrent updates more gracefully
             )
             .await
         {
-            Ok(_) => Ok(true),
+            Ok(updated_lease) => {
+                // Atomic verification: verify immediately from the returned object (no extra API call needed)
+                let holder = updated_lease
+                    .spec
+                    .and_then(|spec| spec.holder_identity)
+                    .unwrap_or_default();
+                
+                if holder == self.pod_name {
+                    if is_acquisition {
+                        info!(
+                            pod_name = self.pod_name,
+                            "Successfully acquired lease (verified atomically)"
+                        );
+                    }
+                    Ok(true)  // We successfully acquired/renewed and are the holder
+                } else {
+                    // Race condition: patch succeeded but we're not the holder
+                    // This can happen post-acquisition due to concurrent updates
+                    warn!(
+                        pod_name = self.pod_name,
+                        actual_holder = holder,
+                        is_acquisition,
+                        "Lease updated but not the holder (race condition detected)"
+                    );
+                    Ok(false)
+                }
+            }
             Err(kube::Error::Api(err)) if err.code == 409 => {
                 // Conflict, someone else updated it
                 Ok(false)
@@ -399,11 +446,10 @@ impl LeaseManager {
             // Normal lease renewal
             match self.update_lease(leases.clone(), false).await {
                 Ok(true) => {
+                    // Atomic verification: update_lease() already verified we're the holder
+                    // from the patch response, so no separate verification needed here
                     LEASE_RENEWALS_TOTAL.inc();
                     debug!(pod_name = self.pod_name, "Lease renewed successfully");
-                    
-                    // Periodically verify we're still the holder (detect split-brain)
-                    self.verify_still_holder(&leases).await?;
                 }
                 Ok(false) => {
                     warn!(
@@ -473,62 +519,6 @@ impl LeaseManager {
         self.is_leader.store(false, Ordering::Relaxed);
         LEADER_ELECTION_STATE.set(0);
         LEADER_TRANSITIONS_TOTAL.inc();
-    }
-
-    /// Verify we're still the holder of the lease (detect split-brain)
-    async fn verify_still_holder(&self, leases: &Api<Lease>) -> Result<(), LeaseError> {
-        let lease = leases.get(&self.config.lease_name).await?;
-        
-        let holder = lease.spec
-            .and_then(|spec| spec.holder_identity)
-            .unwrap_or_default();
-        
-        if holder != self.pod_name {
-            warn!(
-                expected = self.pod_name,
-                actual = holder,
-                "Lease holder mismatch detected!"
-            );
-            return Err(LeaseError::AcquisitionFailed);
-        }
-        
-        Ok(())
-    }
-
-    /// Verify that we're still the leader after acquisition
-    /// This helps prevent split-brain during K8s API eventual consistency windows
-    async fn verify_leadership(&self) -> bool {
-        // Brief pause to allow K8s API to become consistent
-        sleep(Duration::from_millis(LEADERSHIP_VERIFICATION_DELAY_MS)).await;
-        
-        let leases: Api<Lease> = Api::namespaced(self.client.clone(), &self.namespace);
-        
-        let lease = match leases.get(&self.config.lease_name).await {
-            Ok(lease) => lease,
-            Err(err) => {
-                warn!(%err, "Failed to verify leadership - could not read lease");
-                return false;
-            }
-        };
-        
-        let holder = lease.spec
-            .and_then(|spec| spec.holder_identity)
-            .unwrap_or_default();
-        
-        if holder == self.pod_name {
-            info!(pod_name = self.pod_name, "Leadership verified ✓");
-            true
-        } else if holder.is_empty() {
-            warn!("Leadership verification failed - lease has no holder");
-            false
-        } else {
-            warn!(
-                expected = self.pod_name,
-                actual_holder = holder,
-                "Leadership verification failed - another pod holds the lease"
-            );
-            false
-        }
     }
 
     /// Release the lease (for rotation or shutdown)
