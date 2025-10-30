@@ -227,6 +227,7 @@ impl LeaseManager {
                             if time_since_renew_secs > self.config.lease_duration_seconds {
                                 // Lease expired, try to take it
                                 info!(
+                                    pod_name = self.pod_name,
                                     current_holder = holder_identity,
                                     seconds_since_renew = time_since_renew_secs,
                                     lease_duration = self.config.lease_duration_seconds,
@@ -235,7 +236,8 @@ impl LeaseManager {
                                 return self.update_lease(leases, true).await;
                             } else {
                                 // Lease is fresh, log and wait
-                                info!(
+                                debug!(
+                                    pod_name = self.pod_name,
                                     current_holder = holder_identity,
                                     seconds_since_renew = time_since_renew_secs,
                                     lease_duration = self.config.lease_duration_seconds,
@@ -315,23 +317,44 @@ impl LeaseManager {
     /// Returns Ok(true) if we successfully acquired/renewed and are the holder
     /// Returns Ok(false) if there was a conflict or we're not the holder
     /// Uses atomic verification: verifies ownership from the patch response (no separate API call)
+    /// 
+    /// During renewal, we do NOT include holder_identity in the patch.
+    /// This prevents Strategic Merge PATCH from allowing non-leaders to steal the lease.
+    /// Only during acquisition do we set holder_identity.
     async fn update_lease(&self, leases: Api<Lease>, is_acquisition: bool) -> Result<bool, LeaseError> {
         let now = MicroTime(Utc::now());
         
-        let mut lease_spec = k8s_openapi::api::coordination::v1::LeaseSpec {
-            holder_identity: Some(self.pod_name.clone()),
-            lease_duration_seconds: Some(self.config.lease_duration_seconds as i32),
-            renew_time: Some(now.clone()),
-            ..Default::default()
+        // For renewal, only update renew_time - do not change holder_identity
+        // For acquisition, we can change holder_identity to claim ownership
+        let lease_spec = if is_acquisition {
+            // Acquisition: set holder_identity to claim the lease
+            k8s_openapi::api::coordination::v1::LeaseSpec {
+                holder_identity: Some(self.pod_name.clone()),
+                lease_duration_seconds: Some(self.config.lease_duration_seconds as i32),
+                renew_time: Some(now.clone()),
+                acquire_time: Some(now),
+                ..Default::default()
+            }
+        } else {
+            // Renewal: only update renew_time and lease_duration_seconds
+            // Leave holder_identity unchanged - this prevents split-brain scenarios
+            k8s_openapi::api::coordination::v1::LeaseSpec {
+                lease_duration_seconds: Some(self.config.lease_duration_seconds as i32),
+                renew_time: Some(now.clone()),
+                ..Default::default()
+            }
         };
-
-        if is_acquisition {
-            lease_spec.acquire_time = Some(now);
-        }
 
         let patch = serde_json::json!({
             "spec": lease_spec
         });
+
+        debug!(
+            pod_name = self.pod_name,
+            is_acquisition,
+            "Patching lease with {}",
+            if is_acquisition { "holder_identity set (acquisition)" } else { "renew_time only (renewal)" }
+        );
 
         match leases
             .patch(
@@ -358,21 +381,35 @@ impl LeaseManager {
                     Ok(true)  // We successfully acquired/renewed and are the holder
                 } else {
                     // Race condition: patch succeeded but we're not the holder
-                    // This can happen post-acquisition due to concurrent updates
+                    // During renewal: this means we lost leadership (another pod acquired it)
+                    // During acquisition: concurrent acquisition race
                     warn!(
                         pod_name = self.pod_name,
                         actual_holder = holder,
                         is_acquisition,
-                        "Lease updated but not the holder (race condition detected)"
+                        "Lease updated but not the holder (race condition detected) - stepping down"
                     );
                     Ok(false)
                 }
             }
             Err(kube::Error::Api(err)) if err.code == 409 => {
                 // Conflict, someone else updated it
+                debug!(
+                    pod_name = self.pod_name,
+                    is_acquisition,
+                    "Lease patch conflict (409) - another pod updated it"
+                );
                 Ok(false)
             }
-            Err(err) => Err(err.into()),
+            Err(err) => {
+                error!(
+                    %err,
+                    pod_name = self.pod_name,
+                    is_acquisition,
+                    "Failed to patch lease"
+                );
+                Err(err.into())
+            }
         }
     }
 
@@ -452,9 +489,10 @@ impl LeaseManager {
                     debug!(pod_name = self.pod_name, "Lease renewed successfully");
                 }
                 Ok(false) => {
+                    // Renewal failed: either we're not the holder (lost leadership) or conflict occurred
                     warn!(
                         pod_name = self.pod_name,
-                        "Lost lease during renewal"
+                        "Lost lease during renewal - another pod is now the leader"
                     );
                     return Err(LeaseError::AcquisitionFailed);
                 }
@@ -462,7 +500,7 @@ impl LeaseManager {
                     error!(
                         %err,
                         pod_name = self.pod_name,
-                        "Failed to renew lease"
+                        "Failed to renew lease - API error occurred"
                     );
                     LEASE_FAILURES_TOTAL.inc();
                     return Err(err);
