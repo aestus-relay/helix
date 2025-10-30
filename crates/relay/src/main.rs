@@ -72,6 +72,10 @@ fn main() {
 
     info!(cores = ?config.cores, "cores config");
 
+    // Initialize k8s leader election metrics
+    #[cfg(feature = "k8s")]
+    helix_relay::k8s::init_k8s_metrics();
+
     block_on(start_metrics_server(&config));
     match block_on(run(config, keypair)) {
         Ok(_) => info!("relay exited"),
