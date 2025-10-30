@@ -60,6 +60,10 @@ fn main() {
         config.logging.dir_path(),
     );
 
+    // Initialize k8s leader election metrics
+    #[cfg(feature = "k8s")]
+    helix_relay::k8s::init_k8s_metrics();
+
     block_on(start_metrics_server(&config));
     match block_on(run(instance_id, config, keypair)) {
         Ok(_) => info!("relay exited"),
