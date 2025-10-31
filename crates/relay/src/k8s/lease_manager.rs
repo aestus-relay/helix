@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use rustls::crypto::{ring, CryptoProvider};
 
-use helix_common::{chain_info::ChainInfo, local_cache::LocalCache, K8sLeaderElectionConfig};
+use helix_common::{chain_info::ChainInfo, K8sLeaderElectionConfig};
 
 use crate::housekeeper::CurrentSlotInfo;
 use k8s_openapi::api::coordination::v1::Lease;
@@ -76,6 +76,7 @@ pub enum LeaseError {
 }
 
 /// Manages Kubernetes Lease-based leader election
+#[derive(Clone)]
 pub struct LeaseManager {
     config: K8sLeaderElectionConfig,
     client: Client,
@@ -84,7 +85,6 @@ pub struct LeaseManager {
     is_leader: Arc<AtomicBool>,
     current_slot_info: CurrentSlotInfo,
     chain_info: Arc<ChainInfo>,
-    auctioneer: Arc<LocalCache>,
     shutdown_signal: Arc<AtomicBool>,
     leadership_acquired_slot: Arc<RwLock<Option<u64>>>,
 }
@@ -96,7 +96,6 @@ impl LeaseManager {
         is_leader: Arc<AtomicBool>,
         current_slot_info: &CurrentSlotInfo,
         chain_info: Arc<ChainInfo>,
-        auctioneer: &Arc<LocalCache>,
     ) -> Result<Self, LeaseError> {
         // Ensure TLS provider is installed (required for kube-rs)
         ensure_tls_provider();
@@ -126,7 +125,6 @@ impl LeaseManager {
             is_leader,
             chain_info,
             current_slot_info: current_slot_info.clone(),
-            auctioneer: auctioneer.clone(),
             shutdown_signal: Arc::new(AtomicBool::new(false)),
             leadership_acquired_slot: Arc::new(RwLock::new(None)),
         })
@@ -134,7 +132,7 @@ impl LeaseManager {
 
     /// Start the lease manager background task
     pub async fn start(&self) -> Result<(), LeaseError> {
-        let manager = self.clone_for_task();
+        let manager = self.clone();
         
         tokio::spawn(async move {
             if let Err(err) = manager.run().await {
@@ -178,7 +176,7 @@ impl LeaseManager {
                                 backoff_secs,
                                 "Rotation complete, backing off to allow others to acquire lease"
                             );
-                            sleep(Duration::from_secs_f64(backoff_secs)).await;
+                            sleep_with_jitter(backoff_secs).await;
                         } else {
                             // Error/lost lease unexpectedly - retry sooner with jitter
                             if let Err(err) = result {
@@ -460,7 +458,6 @@ impl LeaseManager {
                         wait_for_safe_transition(
                             &self.current_slot_info,
                             &self.chain_info,
-                            &self.auctioneer,
                             self.config.slot_completion_timeout_seconds,
                             TransitionReason::Rotation,
                         ).await;
@@ -579,7 +576,6 @@ impl LeaseManager {
         wait_for_safe_transition(
             &self.current_slot_info,
             &self.chain_info,
-            &self.auctioneer,
             self.config.slot_completion_timeout_seconds,
             TransitionReason::Shutdown,
         )
@@ -594,21 +590,5 @@ impl LeaseManager {
         }
 
         Ok(())
-    }
-
-    /// Clone this manager for use in background tasks
-    fn clone_for_task(&self) -> Self {
-        Self {
-            config: self.config.clone(),
-            client: self.client.clone(),
-            namespace: self.namespace.clone(),
-            pod_name: self.pod_name.clone(),
-            is_leader: self.is_leader.clone(),
-            current_slot_info: self.current_slot_info.clone(),
-            chain_info: self.chain_info.clone(),
-            auctioneer: self.auctioneer.clone(),
-            shutdown_signal: self.shutdown_signal.clone(),
-            leadership_acquired_slot: self.leadership_acquired_slot.clone(),
-        }
     }
 }

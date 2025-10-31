@@ -127,7 +127,6 @@ async fn run(config: RelayConfig, keypair: BlsKeypair) -> eyre::Result<()> {
             is_leader.clone(),
             &current_slot_info,
             chain_info.clone(),
-            &local_cache,
         )
         .await
         {
