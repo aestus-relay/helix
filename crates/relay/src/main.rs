@@ -129,7 +129,6 @@ async fn run(instance_id: String, config: RelayConfig, keypair: BlsKeypair) -> e
             is_leader.clone(),
             &current_slot_info,
             chain_info.clone(),
-            &local_cache,
         )
         .await
         {
