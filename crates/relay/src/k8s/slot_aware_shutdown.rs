@@ -1,7 +1,6 @@
-use std::sync::Arc;
 use std::time::Duration;
 
-use helix_common::{chain_info::ChainInfo, local_cache::LocalCache, utils::utcnow_sec};
+use helix_common::{chain_info::ChainInfo, utils::utcnow_sec};
 
 use crate::housekeeper::CurrentSlotInfo;
 use tracing::{info, warn};
@@ -41,7 +40,6 @@ impl TransitionReason {
 pub async fn wait_for_safe_transition(
     current_slot_info: &CurrentSlotInfo,
     chain_info: &ChainInfo,
-    _auctioneer: &Arc<LocalCache>,  // Kept for API compatibility but unused
     timeout_secs: u64,
     reason: TransitionReason,
 ) {

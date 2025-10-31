@@ -170,7 +170,6 @@ async fn run(
             is_leader.clone(),
             &current_slot_info,
             chain_info.clone(),
-            &local_cache,
         )
         .await
         {
