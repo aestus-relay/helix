@@ -106,7 +106,7 @@ tower_governor = { version = "0.6.0", features = ["axum"] }
 tracing = "0.1.37"
 tracing-appender = "0.2.2"
 tracing-opentelemetry = "0.30"
-tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3.17", features = ["env-filter", "json"] }
 tree_hash = "0.10"
 tree_hash_derive = "0.10"
 url = { version = "2.4", features = ["serde"] }
