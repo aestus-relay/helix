@@ -34,6 +34,27 @@ pub enum BlockSimError {
 }
 
 impl BlockSimError {
+    pub fn error_variant(&self) -> &'static str {
+        match self {
+            Self::BlockValidationFailed(_) => "BlockValidationFailed",
+            Self::InvalidTxRoot { .. } => "InvalidTxRoot",
+            Self::Timeout => "Timeout",
+            Self::RpcError => "RpcError",
+            Self::SendError => "SendError",
+            Self::NoSimulatorAvailable => "NoSimulatorAvailable",
+            Self::SimulationDropped => "SimulationDropped",
+        }
+    }
+
+    pub fn error_details(&self) -> String {
+        match self {
+            Self::BlockValidationFailed(msg) => msg.clone(),
+            Self::InvalidTxRoot { got, expected } => format!("got: {got}, expected: {expected}"),
+            Self::Timeout | Self::RpcError | Self::SendError | Self::NoSimulatorAvailable |
+            Self::SimulationDropped => String::new(),
+        }
+    }
+
     pub fn is_temporary(&self) -> bool {
         match self {
             BlockSimError::BlockValidationFailed(reason) => match reason.to_lowercase().as_str() {

@@ -181,7 +181,8 @@ impl<B: BidAdjustor> Context<B> {
             slot_data,
         )?;
         record_submission_step("validated", start_val.elapsed());
-        trace!("validated");
+        let status = "ok";
+        trace!(status, "validated");
 
         let (optimistic_version, is_top_bid) =
             if self.sim_manager.can_process_optimistic_submission() &&

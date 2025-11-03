@@ -63,7 +63,21 @@ impl<A: Api> BuilderApi<A> {
         if let Err(err) = &res &&
             err.should_report()
         {
-            error!(%err)
+            let status = "error";
+            let (error_type, error, error_message) = match err {
+                BuilderApiError::BidValidation(val_err) => (
+                    "validation",
+                    val_err.error_variant(),
+                    val_err.error_details(),
+                ),
+                BuilderApiError::BlockSimulation(sim_err) => (
+                    "simulation",
+                    sim_err.error_variant(),
+                    sim_err.error_details(),
+                ),
+                _ => ("other", "", String::new()),
+            };
+            error!(status, error_type, error, error_message);
         }
 
         res
