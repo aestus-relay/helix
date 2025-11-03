@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::time::Duration;
 
 use axum::http::HeaderMap;
@@ -9,6 +11,8 @@ pub trait ApiProvider: Send + Sync + Clone + 'static {
         &self,
         params: &GetHeaderParams,
         headers: &HeaderMap,
+        query_params: &HashMap<String, String>,
+        remote_addr: SocketAddr,
         preferences: &ValidatorPreferences,
         ms_into_slot: u64,
     ) -> Result<TimingResult, &'static str>;
@@ -33,6 +37,8 @@ impl ApiProvider for DefaultApiProvider {
         &self,
         _params: &GetHeaderParams,
         _headers: &HeaderMap,
+        _query_params: &HashMap<String, String>,
+        _remote_addr: SocketAddr,
         _preferences: &ValidatorPreferences,
         _ms_into_slot: u64,
     ) -> Result<TimingResult, &'static str> {

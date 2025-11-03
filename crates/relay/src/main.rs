@@ -9,7 +9,7 @@ use std::{
 use eyre::eyre;
 use helix_common::{
     RelayConfig,
-    api_provider::DefaultApiProvider,
+    tgaas_provider::TgaasApiProvider,
     load_config, load_keypair,
     local_cache::LocalCache,
     metrics::start_metrics_server,
@@ -34,7 +34,7 @@ static GLOBAL: Jemalloc = Jemalloc;
 struct ApiProd;
 
 impl Api for ApiProd {
-    type ApiProvider = DefaultApiProvider;
+    type ApiProvider = TgaasApiProvider;
 }
 
 fn main() {
@@ -93,6 +93,10 @@ async fn run(instance_id: String, config: RelayConfig, keypair: BlsKeypair) -> e
     let event_channel = crossbeam_channel::bounded(10_000);
     let relay_network_api =
         RelayNetworkManager::new(config.relay_network.clone(), relay_signing_context.clone());
+
+    let api_provider = Arc::new(TgaasApiProvider::new(
+        config.timing_game_config.clone(),
+    ));
 
     let (top_bid_tx, _) = tokio::sync::broadcast::channel(100);
 
@@ -158,7 +162,7 @@ async fn run(instance_id: String, config: RelayConfig, keypair: BlsKeypair) -> e
         chain_info,
         relay_signing_context,
         beacon_client,
-        Arc::new(DefaultApiProvider {}),
+        api_provider,
         DefaultBidAdjustor {},
         known_validators_loaded,
         terminating.clone(),
