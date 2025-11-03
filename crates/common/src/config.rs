@@ -40,6 +40,9 @@ pub struct RelayConfig {
     pub router_config: RouterConfig,
     #[serde(default = "default_duration")]
     pub target_get_payload_propagation_duration_ms: u64,
+    /// Configuration for timing game parameters.
+    #[serde(default)]
+    pub timing_game_config: TimingGameConfig,
     /// Configuration for block merging parameters.
     #[serde(default)]
     pub block_merging_config: BlockMergingConfig,
@@ -84,6 +87,7 @@ impl RelayConfig {
             validator_preferences: Default::default(),
             router_config: Default::default(),
             target_get_payload_propagation_duration_ms: Default::default(),
+            timing_game_config: Default::default(),
             block_merging_config: Default::default(),
             primev_config: Default::default(),
             discord_webhook_url: Default::default(),
@@ -211,6 +215,22 @@ pub struct PostgresConfig {
 }
 
 #[derive(Serialize, Deserialize, Clone, Default)]
+pub struct TimingGameConfig {
+    #[serde(default)]
+    pub latency_service_uri: String,
+    #[serde(default = "default_u64::<0>")]
+    pub get_header_response_receive_by_ms: u64,
+    #[serde(default = "default_u64::<300>")]
+    pub default_client_rtt_ms: u64,
+    #[serde(default = "default_rtt_to_handshake_scale")]
+    pub rtt_to_handshake_scale: f64,
+    #[serde(default = "default_rtt_to_response_scale")]
+    pub rtt_to_response_scale: f64,
+    #[serde(default = "default_u64::<50>")]
+    pub latency_request_timeout_ms: u64,
+}
+
+#[derive(Serialize, Deserialize, Clone, Default)]
 pub struct BlockMergingConfig {
     /// Flag to enable this feature.
     #[serde(default = "default_bool::<false>")]
@@ -227,6 +247,13 @@ pub const fn default_u16<const U: u16>() -> u16 {
     U
 }
 
+fn default_rtt_to_handshake_scale() -> f64 {
+    1.5
+}
+
+fn default_rtt_to_response_scale() -> f64 {
+    0.5
+}
 pub const fn default_bool<const B: bool>() -> bool {
     B
 }

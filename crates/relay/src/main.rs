@@ -14,7 +14,7 @@ use flux::{
 };
 use helix_common::{
     RelayConfig,
-    api_provider::DefaultApiProvider,
+    tgaas_provider::TgaasApiProvider,
     expect_env_var, load_config, load_keypair,
     local_cache::LocalCache,
     metrics::start_metrics_server,
@@ -42,7 +42,7 @@ const ADMIN_TOKEN_ENV_VAR: &str = "ADMIN_TOKEN";
 struct ApiProd;
 
 impl Api for ApiProd {
-    type ApiProvider = DefaultApiProvider;
+    type ApiProvider = TgaasApiProvider;
 }
 
 fn main() {
@@ -98,6 +98,10 @@ async fn run(instance_id: String, config: RelayConfig, keypair: BlsKeypair) -> e
 
     let relay_network_api =
         RelayNetworkManager::new(config.relay_network.clone(), relay_signing_context.clone());
+
+    let api_provider = Arc::new(TgaasApiProvider::new(
+        config.timing_game_config.clone(),
+    ));
 
     config.router_config.validate_bid_sorter()?;
 
@@ -174,7 +178,7 @@ async fn run(instance_id: String, config: RelayConfig, keypair: BlsKeypair) -> e
             chain_info.clone(),
             relay_signing_context,
             beacon_client,
-            Arc::new(DefaultApiProvider {}),
+            api_provider,
             known_validators_loaded,
             terminating.clone(),
             is_leader.clone(),
