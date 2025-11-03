@@ -384,7 +384,14 @@ pub struct PrimevConfig {
 pub enum LoggingConfig {
     #[default]
     Console,
+    JsonConsole,
     File {
+        dir_path: PathBuf,
+        file_name: String,
+        /// OpenTelemetry server URL
+        otlp_server: Option<Url>,
+    },
+    JsonFile {
         dir_path: PathBuf,
         file_name: String,
         /// OpenTelemetry server URL
@@ -397,7 +404,9 @@ impl LoggingConfig {
     pub fn dir_path(&self) -> Option<PathBuf> {
         match self {
             LoggingConfig::Console => None,
+            LoggingConfig::JsonConsole => None,
             LoggingConfig::File { dir_path, .. } => Some(dir_path.clone()),
+            LoggingConfig::JsonFile { dir_path, .. } => Some(dir_path.clone()),
         }
     }
 }
