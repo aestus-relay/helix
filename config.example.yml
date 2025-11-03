@@ -41,10 +41,20 @@ primev_config: null
 discord_webhook_url: null
 is_submission_instance: true
 is_registration_instance: true
-logging: !File
-  dir_path: /app/logs
-  file_name: titan_relay.log
-  otlp_server: http://localhost:4317
+# Console - Human-readable compact format to stdout
+logging: Console
+# JsonConsole - JSON structured format to stdout (recommended for Kubernetes/Loki)
+# logging: JsonConsole
+# File - Compact format to file
+# logging: !File
+#   dir_path: /app/logs
+#   file_name: titan_relay.log
+#   otlp_server: http://localhost:4317
+# JsonFile - JSON format to file
+# logging: !JsonFile
+#   dir_path: /app/logs
+#   file_name: titan_relay.log
+#   otlp_server: http://localhost:4317
 cores:
   auctioneer: 1
   sub_workers: [2, 3, 4, 5]
