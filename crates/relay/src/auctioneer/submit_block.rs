@@ -56,7 +56,8 @@ impl<B: BidAdjustor> Context<B> {
                 }
             };
         record_submission_step("validated", start_val.elapsed());
-        trace!("validated");
+        let status = "ok";
+        trace!(status, "validated");
 
         let mut submission_data = submission_data.clone();
 

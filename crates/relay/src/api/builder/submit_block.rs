@@ -85,9 +85,6 @@ impl<A: Api> BuilderApi<A> {
             if result.tcp_status.is_okay() {
                 StatusCode::OK.into_response()
             } else {
-                if result.should_report {
-                    tracing::error!(err = result.error_msg.as_str());
-                }
                 (result.http_status, result.error_msg.to_string()).into_response()
             }
         } else {

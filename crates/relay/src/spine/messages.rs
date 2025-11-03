@@ -6,6 +6,7 @@ pub use helix_common::api::builder_api::TopBidUpdate;
 use helix_tcp_types::Status;
 use helix_types::BlsPublicKeyBytes;
 use http::StatusCode;
+use tracing::error;
 
 use crate::{
     api::builder::error::BuilderApiError,
@@ -33,6 +34,25 @@ pub struct SubmissionResultWithRef {
 
 impl SubmissionResultWithRef {
     pub fn new(sub_ref: SubmissionRef, result: Result<(), BuilderApiError>) -> Self {
+        if let Err(e) = &result {
+            if e.should_report() {
+                let status = "error";
+                let (error_type, error, error_message) = match e {
+                    BuilderApiError::BidValidation(val_err) => (
+                        "validation",
+                        val_err.error_variant(),
+                        val_err.error_details(),
+                    ),
+                    BuilderApiError::BlockSimulation(sim_err) => (
+                        "simulation",
+                        sim_err.error_variant(),
+                        sim_err.error_details(),
+                    ),
+                    _ => ("other", "", String::new()),
+                };
+                error!(status, error_type, error, error_message);
+            }
+        }
         match result {
             Ok(()) => Self {
                 sub_ref,
