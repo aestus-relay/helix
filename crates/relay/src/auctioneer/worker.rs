@@ -140,7 +140,7 @@ impl SubWorker {
                 match self.handle_block_submission(headers, body, &mut trace) {
                     Ok((submission, withdrawals_root, version, merging_data)) => {
                         tracing::Span::current()
-                            .record("bid_slot", tracing::field::display(submission.bid_slot()));
+                            .record("slot", tracing::field::display(submission.bid_slot()));
                         tracing::Span::current()
                             .record("block_hash", tracing::field::display(submission.block_hash()));
                         tracing::Span::current().record(
