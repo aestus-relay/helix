@@ -49,6 +49,20 @@ pub async fn init_tracing_log(
             guard
         }
 
+        LoggingConfig::JsonConsole => {
+            let (writer, guard) = tracing_appender::non_blocking(std::io::stdout());
+            let layer = tracing_subscriber::fmt::layer()
+                .json()
+                .flatten_event(true)
+                .with_current_span(true)
+                .with_span_list(false)
+                .with_writer(writer)
+                .with_filter(get_crate_filter(log_level));
+
+            tracing_subscriber::registry().with(layer).init();
+            guard
+        }
+
         LoggingConfig::File { dir_path, file_name, otlp_server } => {
             let file_appender = tracing_appender::rolling::Builder::new()
                 .filename_prefix(file_name)
@@ -60,6 +74,60 @@ pub async fn init_tracing_log(
             let (writer, guard) = tracing_appender::non_blocking(file_appender);
             let file_layer = tracing_subscriber::fmt::layer()
                 .event_format(format)
+                .with_writer(writer)
+                .with_filter(get_crate_filter(log_level));
+
+            match otlp_server {
+                Some(exporter_url) => {
+                    let exporter = opentelemetry_otlp::SpanExporter::builder()
+                        .with_tonic()
+                        .with_endpoint(exporter_url.to_string())
+                        .build()
+                        .unwrap();
+
+                    let tracer = opentelemetry_sdk::trace::SdkTracerProvider::builder()
+                        .with_batch_exporter(exporter)
+                        .with_resource(
+                            Resource::builder()
+                                .with_attribute(KeyValue::new("service.name", "helix_relay"))
+                                .with_attribute(KeyValue::new("service.region", region.to_string()))
+                                .with_attribute(KeyValue::new("service.instance_id", instance_id))
+                                .build(),
+                        )
+                        .build()
+                        .tracer("helix_relay");
+
+                    let otel_layer = OpenTelemetryLayer::new(tracer)
+                        .with_location(false)
+                        .with_tracked_inactivity(false)
+                        .with_threads(false)
+                        .with_filter(get_crate_filter(tracing::Level::TRACE));
+
+                    tracing_subscriber::registry().with(file_layer).with(otel_layer).init();
+                }
+                None => {
+                    tracing_subscriber::registry().with(file_layer).init();
+                }
+            }
+
+            guard
+        }
+
+        LoggingConfig::JsonFile { dir_path, file_name, otlp_server } => {
+            let file_appender = tracing_appender::rolling::Builder::new()
+                .filename_prefix(file_name)
+                .max_log_files(14)
+                .rotation(Rotation::DAILY)
+                .build(dir_path)
+                .expect("failed to create file log appender");
+
+            let (writer, guard) = tracing_appender::non_blocking(file_appender);
+
+            let file_layer = tracing_subscriber::fmt::layer()
+                .json()
+                .flatten_event(true) // Flatten span fields to top level for simpler Loki queries
+                .with_current_span(true)
+                .with_span_list(false)
                 .with_writer(writer)
                 .with_filter(get_crate_filter(log_level));
 
