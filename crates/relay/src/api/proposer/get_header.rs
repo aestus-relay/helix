@@ -1,9 +1,14 @@
 use std::{
+    collections::HashMap,
+    net::SocketAddr,
     sync::{Arc, atomic::Ordering},
     time::Instant,
 };
 
-use axum::{Extension, extract::Path, http::HeaderMap, response::IntoResponse};
+use axum::{Extension,
+    extract::{Path, Query, ConnectInfo},
+    http::HeaderMap,
+    response::IntoResponse};
 use helix_common::{
     GetHeaderTrace, RequestTimings,
     api::proposer_api::GetHeaderParams,
@@ -45,6 +50,8 @@ impl<A: Api> ProposerApi<A> {
         Extension(Terminating(terminating)): Extension<Terminating>,
         headers: HeaderMap,
         Path(params): Path<GetHeaderParams>,
+        Query(query_params): Query<HashMap<String, String>>,
+        ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
     ) -> Result<impl IntoResponse, ProposerApiError> {
         trace!("starting call");
 
@@ -77,7 +84,12 @@ impl<A: Api> ProposerApi<A> {
 
         let TimingResult { is_mev_boost, sleep_time } = proposer_api
             .api_provider
-            .get_timing(&params, &headers, &duty.entry.preferences, ms_into_slot)
+            .get_timing(&params,
+                        &headers,
+                        &query_params,
+                        remote_addr,
+                        &duty.entry.preferences,
+                        ms_into_slot)
             .map_err(ProposerApiError::InvalidGetHeader)?;
 
         let mut timing_guard = TimeoutGuard::default();

@@ -17,8 +17,8 @@ use flux::{
 use flux_utils::SharedVector;
 use helix_common::{
     RelayConfig,
-    api_provider::DefaultApiProvider,
     expect_env_var, load_config, load_keypair,
+    tgaas_provider::TgaasApiProvider,
     local_cache::LocalCache,
     metrics::start_metrics_server,
     signing::RelaySigningContext,
@@ -50,7 +50,7 @@ const MAX_SUBMISSIONS_PER_SLOT: usize = 10_000;
 struct ApiProd;
 
 impl Api for ApiProd {
-    type ApiProvider = DefaultApiProvider;
+    type ApiProvider = TgaasApiProvider;
 }
 
 #[derive(Deserialize)]
@@ -224,6 +224,11 @@ async fn run(
 
         let bid_producer =
             spine.spine.standalone_dcache_producer_for(TileName::from_str_truncate("Api"));
+
+        let api_provider = Arc::new(TgaasApiProvider::new(
+            config.timing_game_config.clone(),
+        ));
+
         start_api_service::<ApiProd>(
             config.clone(),
             db.clone(),
@@ -232,7 +237,7 @@ async fn run(
             chain_info.clone(),
             relay_signing_context,
             beacon_client,
-            Arc::new(DefaultApiProvider {}),
+            api_provider,
             known_validators_loaded,
             terminating.clone(),
             is_leader.clone(),
