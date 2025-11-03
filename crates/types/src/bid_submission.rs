@@ -818,6 +818,83 @@ pub enum BlockValidationError {
     BlobsError(BlobsError),
 }
 
+impl BlockValidationError {
+    pub fn error_variant(&self) -> &'static str {
+        match self {
+            Self::SubmissionForWrongSlot { .. } => "SubmissionForWrongSlot",
+            Self::OutOfSequence { .. } => "OutOfSequence",
+            Self::UknnownParentHash { .. } => "UnknownParentHash",
+            Self::FeeRecipientMismatch { .. } => "FeeRecipientMismatch",
+            Self::ProposerPublicKeyMismatch { .. } => "ProposerPublicKeyMismatch",
+            Self::PrevRandaoMismatch { .. } => "PrevRandaoMismatch",
+            Self::WithdrawalsRootMismatch { .. } => "WithdrawalsRootMismatch",
+            Self::IncorrectTimestamp { .. } => "IncorrectTimestamp",
+            Self::InvalidPayloadType { .. } => "InvalidPayloadType",
+            Self::SlotMismatch { .. } => "SlotMismatch",
+            Self::BlockHashMismatch { .. } => "BlockHashMismatch",
+            Self::ParentHashMismatch { .. } => "ParentHashMismatch",
+            Self::GasLimitMismatch { .. } => "GasLimitMismatch",
+            Self::GasUsedMismatch { .. } => "GasUsedMismatch",
+            Self::TransactionsRootMismatch { .. } => "TransactionsRootMismatch",
+            Self::AlreadyProcessingNewerPayload => "AlreadyProcessingNewerPayload",
+            Self::ZeroValueBlock => "ZeroValueBlock",
+            Self::BuilderNotInProposersTrustedList { .. } => "BuilderNotInProposersTrustedList",
+            Self::SszError(_) => "SszError",
+            Self::BlobsError(_) => "BlobsError",
+        }
+    }
+
+    pub fn error_details(&self) -> String {
+        match self {
+            Self::SubmissionForWrongSlot { expected, got } => {
+                format!("expected: {expected}, got: {got}")
+            }
+            Self::OutOfSequence { seen, this } => format!("seen: {seen:?}, this: {this:?}"),
+            Self::UknnownParentHash { submission, have } => {
+                format!("submission: {submission}, have: {have:?}")
+            }
+            Self::FeeRecipientMismatch { got, expected } => {
+                format!("got: {got:?}, expected: {expected:?}")
+            }
+            Self::ProposerPublicKeyMismatch { got, expected } => {
+                format!("got: {got:?}, expected: {expected:?}")
+            }
+            Self::PrevRandaoMismatch { got, expected } => {
+                format!("got: {got:?}, expected: {expected:?}")
+            }
+            Self::WithdrawalsRootMismatch { got, expected } => {
+                format!("got: {got:?}, expected: {expected:?}")
+            }
+            Self::TransactionsRootMismatch { got, expected } => {
+                format!("got: {got:?}, expected: {expected:?}")
+            }
+            Self::IncorrectTimestamp { got, expected } => {
+                format!("got: {got}, expected: {expected}")
+            }
+            Self::InvalidPayloadType { fork_name } => format!("not {fork_name:?} payload"),
+            Self::SlotMismatch { got, expected } => format!("got: {got}, expected: {expected}"),
+            Self::BlockHashMismatch { message, payload } => {
+                format!("message: {message:?}, payload: {payload:?}")
+            }
+            Self::ParentHashMismatch { message, payload } => {
+                format!("message: {message:?}, payload: {payload:?}")
+            }
+            Self::GasLimitMismatch { message, payload } => {
+                format!("message: {message:?}, payload: {payload:?}")
+            }
+            Self::GasUsedMismatch { message, payload } => {
+                format!("message: {message:?}, payload: {payload:?}")
+            }
+            Self::BuilderNotInProposersTrustedList { proposer_trusted_builders } => {
+                format!("proposer trusted: {proposer_trusted_builders:?}")
+            }
+            Self::AlreadyProcessingNewerPayload | Self::ZeroValueBlock => String::new(),
+            Self::SszError(e) => format!("{e:?}"),
+            Self::BlobsError(e) => format!("{e:?}"),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use ssz::Encode;

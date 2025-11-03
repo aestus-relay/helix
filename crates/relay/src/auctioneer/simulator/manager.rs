@@ -207,7 +207,19 @@ impl SimulatorManager {
                     .await;
             let time = timer.stop_and_record();
 
-            debug!(%block_hash, time_secs = time, ?res, "simulation completed");
+            match &res {
+                Ok(_) => {
+                    let status = "ok";
+                    debug!(%block_hash, time_secs = time, status, "simulation completed");
+                }
+                Err(sim_err) => {
+                    let status = "error";
+                    let error_type = "simulation";
+                    let error = sim_err.error_variant();
+                    let error_message = sim_err.error_details();
+                    debug!(%block_hash, time_secs = time, status, error_type, error, error_message, "simulation completed");
+                }
+            }
 
             let paused_until = if let Err(err) = res.as_ref() {
                 SimulatorMetrics::sim_status(false);
