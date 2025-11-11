@@ -494,6 +494,42 @@ lazy_static! {
     )
     .unwrap();
 
+    //////////////// PROPOSER API SSZ ////////////////
+
+    pub static ref PROPOSER_REQUEST_ENCODING: IntCounterVec = register_int_counter_vec_with_registry!(
+        "proposer_request_encoding_total",
+        "Proposer API requests by endpoint, encoding, and test status",
+        &["endpoint", "encoding", "is_test"],
+        &RELAY_METRICS_REGISTRY
+    )
+    .unwrap();
+
+    pub static ref PROPOSER_RESPONSE_ENCODING: IntCounterVec = register_int_counter_vec_with_registry!(
+        "proposer_response_encoding_total",
+        "Proposer API responses by endpoint, encoding, and test status",
+        &["endpoint", "encoding", "is_test"],
+        &RELAY_METRICS_REGISTRY
+    )
+    .unwrap();
+
+    pub static ref PROPOSER_DECODE_LATENCY: HistogramVec = register_histogram_vec_with_registry!(
+        "proposer_decode_latency_microseconds",
+        "Proposer API request decoding latency in microseconds",
+        &["endpoint", "encoding"],
+        exponential_buckets(10., 2., 100).unwrap(),  // 10μs to ~100ms
+        &RELAY_METRICS_REGISTRY
+    )
+    .unwrap();
+
+    pub static ref PROPOSER_ENCODE_LATENCY: HistogramVec = register_histogram_vec_with_registry!(
+        "proposer_encode_latency_microseconds",
+        "Proposer API response encoding latency in microseconds",
+        &["endpoint", "encoding"],
+        exponential_buckets(10., 2., 100).unwrap(),  // 10μs to ~10ms
+        &RELAY_METRICS_REGISTRY
+    )
+    .unwrap();
+
     pub static ref BID_DECOMPRESS_SIZEHINT_REL_ERROR: HistogramVec = register_histogram_vec_with_registry!(
         "bid_sizehint_rel_error",
         "abs(actual-estimate)/max(1, actual)",

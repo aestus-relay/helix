@@ -5,6 +5,7 @@ use helix_common::{
     GetPayloadTrace, RequestTimings,
     api_provider::ApiProvider,
     chain_info::ChainInfo,
+    metrics::{PROPOSER_REQUEST_ENCODING, PROPOSER_RESPONSE_ENCODING},
     spawn_tracked,
     utils::{extract_request_id, utcnow_ns},
 };
@@ -16,7 +17,7 @@ use http::StatusCode;
 use tokio::time::sleep;
 use tracing::{Instrument, error, info, warn};
 
-use super::ProposerApi;
+use super::{ProposerApi, ProposerRequestDecoder, ProposerResponseEncoder};
 use crate::{
     api::{Api, proposer::error::ProposerApiError},
     auctioneer::GetPayloadResultData,
@@ -57,9 +58,18 @@ impl<A: Api> ProposerApi<A> {
 
         let user_agent = proposer_api.api_provider.get_metadata(&headers);
 
-        // TODO: move decoding to worker
-        let signed_blinded_block: SignedBlindedBeaconBlock = serde_json::from_slice(&body)
-            .inspect_err(|err| warn!(%err, "failed to deserialize signed block"))?;
+        // Decode request - SignedBlindedBeaconBlock requires fork-aware decoding
+        let decoder = ProposerRequestDecoder::from_headers(&headers);
+        let encoding_label = decoder.encoding_label();
+        let is_test = decoder.test_label();
+
+        PROPOSER_REQUEST_ENCODING
+            .with_label_values(&["get_payload", encoding_label, is_test])
+            .inc();
+
+        let fork = proposer_api.chain_info.current_fork_name();
+        let signed_blinded_block: SignedBlindedBeaconBlock = 
+            decoder.decode_fork_versioned(body, fork)?;
 
         tracing::Span::current().record("slot", signed_blinded_block.slot().as_u64());
 
@@ -93,7 +103,24 @@ impl<A: Api> ProposerApi<A> {
             ._get_payload(signed_blinded_block, &mut trace, user_agent, ProposerApiVersion::V1)
             .await
         {
-            Ok(get_payload_response) => Ok(axum::Json(get_payload_response)),
+            Ok(get_payload_response) => {
+                let encoder = ProposerResponseEncoder::from_headers(&headers);
+                let encoding_label = encoder.encoding_label();
+                let is_test = encoder.test_label();
+
+                PROPOSER_RESPONSE_ENCODING
+                    .with_label_values(&["get_payload", encoding_label, is_test])
+                    .inc();
+
+                // Like get_header: SSZ returns inner data, JSON returns wrapped response
+                let response = if encoder.is_ssz() {
+                    encoder.encode(&*get_payload_response.data)?
+                } else {
+                    axum::Json(get_payload_response).into_response()
+                };
+
+                Ok(response)
+            }
             Err(err) => {
                 // Save error to DB
                 if let Err(err) = proposer_api
@@ -134,8 +161,18 @@ impl<A: Api> ProposerApi<A> {
 
         let user_agent = proposer_api.api_provider.get_metadata(&headers);
 
-        let signed_blinded_block: SignedBlindedBeaconBlock = serde_json::from_slice(&body)
-            .inspect_err(|err| warn!(%err, "failed to deserialize signed block"))?;
+        // Decode request - SignedBlindedBeaconBlock requires fork-aware decoding
+        let decoder = ProposerRequestDecoder::from_headers(&headers);
+        let encoding_label = decoder.encoding_label();
+        let is_test = decoder.test_label();
+
+        PROPOSER_REQUEST_ENCODING
+            .with_label_values(&["get_payload_v2", encoding_label, is_test])
+            .inc();
+
+        let fork = proposer_api.chain_info.current_fork_name();
+        let signed_blinded_block: SignedBlindedBeaconBlock = 
+            decoder.decode_fork_versioned(body, fork)?;
 
         tracing::Span::current().record("slot", signed_blinded_block.slot().as_u64());
 

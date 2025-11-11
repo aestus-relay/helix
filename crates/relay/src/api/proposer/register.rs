@@ -2,16 +2,16 @@ use std::sync::{Arc, atomic::Ordering};
 
 use axum::{
     Extension,
-    extract::Json,
     http::{HeaderMap, StatusCode},
 };
+use bytes::Bytes;
 use helix_common::{
     Filtering, ValidatorPreferences,
     api::proposer_api::ValidatorRegistrationInfo,
     api_provider::ApiProvider,
     metrics::{
-        REGISTRATIONS_INVALID, REGISTRATIONS_SKIPPED, REGISTRATIONS_TO_CHECK_COUNT,
-        REGISTRATIONS_UNKNOWN,
+        PROPOSER_REQUEST_ENCODING, REGISTRATIONS_INVALID, REGISTRATIONS_SKIPPED,
+        REGISTRATIONS_TO_CHECK_COUNT, REGISTRATIONS_UNKNOWN,
     },
     utils::extract_request_id,
 };
@@ -19,7 +19,7 @@ use helix_types::SignedValidatorRegistration;
 use tokio::{task::JoinSet, time::Instant};
 use tracing::{error, info, trace, warn};
 
-use super::ProposerApi;
+use super::{ProposerApi, ProposerRequestDecoder};
 use crate::api::{
     Api, HEADER_API_KEY,
     proposer::{PreferencesHeader, error::ProposerApiError},
@@ -44,8 +44,19 @@ impl<A: Api> ProposerApi<A> {
         Extension(proposer_api): Extension<Arc<ProposerApi<A>>>,
         Extension(KnownValidatorsLoaded(known_validators_loaded)): Extension<KnownValidatorsLoaded>,
         headers: HeaderMap,
-        Json(registrations): Json<Vec<SignedValidatorRegistration>>,
+        body: bytes::Bytes,
     ) -> Result<StatusCode, ProposerApiError> {
+        // Decode based on Content-Type header
+        let decoder = ProposerRequestDecoder::from_headers(&headers);
+        let encoding_label = decoder.encoding_label();
+        let is_test = decoder.test_label();
+
+        PROPOSER_REQUEST_ENCODING
+            .with_label_values(&["register_validators", encoding_label, is_test])
+            .inc();
+
+        let registrations: Vec<SignedValidatorRegistration> = decoder.decode(body)?;
+
         if registrations.is_empty() {
             return Err(ProposerApiError::EmptyRequest);
         }

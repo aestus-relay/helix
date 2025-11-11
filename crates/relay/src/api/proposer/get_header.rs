@@ -9,7 +9,7 @@ use helix_common::{
     api::proposer_api::GetHeaderParams,
     api_provider::{ApiProvider, TimingResult},
     chain_info::ChainInfo,
-    metrics::{BID_SIGNING_LATENCY, HEADER_TIMEOUT_FETCH, HEADER_TIMEOUT_SLEEP},
+    metrics::{BID_SIGNING_LATENCY, HEADER_TIMEOUT_FETCH, HEADER_TIMEOUT_SLEEP, PROPOSER_RESPONSE_ENCODING},
     signing::RelaySigningContext,
     spawn_tracked,
     utils::{extract_request_id, utcnow_ms, utcnow_ns},
@@ -17,7 +17,7 @@ use helix_common::{
 use helix_types::{BuilderBid, ForkName, GetHeaderResponse, SignedBuilderBid};
 use tracing::{Instrument, debug, error, info, trace, warn};
 
-use super::ProposerApi;
+use super::{ProposerApi, ProposerResponseEncoder};
 use crate::api::{
     Api,
     proposer::{GET_HEADER_REQUEST_CUTOFF_MS, error::ProposerApiError},
@@ -204,11 +204,37 @@ impl<A: Api> ProposerApi<A> {
             );
         }
 
-        let signed_bid = serde_json::to_value(signed_bid)?;
-        info!(block_hash =% bid_block_hash, ?value, "delivering bid");
+        // Create encoder based on Accept header
+        let encoder = ProposerResponseEncoder::from_headers(&headers);
+        let encoding_label = encoder.encoding_label();
+        let is_test = encoder.test_label();
+
+        // Record metrics
+        PROPOSER_RESPONSE_ENCODING
+            .with_label_values(&["get_header", encoding_label, is_test])
+            .inc();
+
+        // Encode response
+        // For SSZ: encode the SignedBuilderBid directly (inner data)
+        // For JSON: use axum::Json with the full GetHeaderResponse (with version wrapper)
+        let response = if encoder.is_ssz() {
+            // SSZ encodes just the data field (SignedBuilderBid)
+            encoder.encode(&signed_bid.data)?
+        } else {
+            // JSON encodes the full response with version wrapper
+            axum::Json(signed_bid).into_response()
+        };
+
+        info!(
+            block_hash =% bid_block_hash,
+            ?value,
+            encoding = encoding_label,
+            is_test,
+            "delivering bid"
+        );
 
         timing_guard.done_fetch = true;
-        Ok(axum::Json(signed_bid))
+        Ok(response)
     }
 }
 

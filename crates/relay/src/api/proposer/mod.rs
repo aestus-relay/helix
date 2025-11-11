@@ -1,4 +1,6 @@
 mod block_merging;
+mod decoder;
+mod encoder;
 mod error;
 mod get_header;
 pub(crate) mod get_payload;
@@ -16,6 +18,12 @@ use helix_common::{
 };
 use hyper::StatusCode;
 pub use types::*;
+
+// SSZ support utilities
+#[allow(unused_imports)] // Will be used in Phase 2-4
+pub(crate) use decoder::ProposerRequestDecoder;
+#[allow(unused_imports)] // Will be used in Phase 2-4
+pub(crate) use encoder::ProposerResponseEncoder;
 
 use crate::{
     api::{Api, proposer::block_merging::BestMergedBlock, router::Terminating},

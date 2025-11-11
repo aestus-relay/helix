@@ -103,6 +103,9 @@ pub enum ProposerApiError {
     #[error("ssz error: {0:?}")]
     SszError(SszError),
 
+    #[error("ssz decode error: {0:?}")]
+    SszDecodeError(ssz::DecodeError),
+
     #[error(transparent)]
     SigError(#[from] SigError),
 
@@ -150,6 +153,7 @@ impl IntoResponse for ProposerApiError {
                 ProposerApiError::InvalidBlindedBlockSlot { .. } |
                 ProposerApiError::BlobKzgCommitmentsMismatch |
                 ProposerApiError::SszError(_) |
+                ProposerApiError::SszDecodeError(_) |
                 ProposerApiError::SigError(_) |
                 ProposerApiError::DeliveringPayload |
                 ProposerApiError::GetPayloadAlreadyReceived |
