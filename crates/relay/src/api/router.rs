@@ -108,10 +108,12 @@ pub fn build_router<A: Api>(
         router = router.route(&route_info.route.path(), maybe_limited);
     }
 
-    // Add health endpoint for K8s leader election (always enabled, no rate limiting)
+    // Add health endpoints for K8s leader election (always enabled, no rate limiting)
     #[cfg(feature = "k8s")]
     {
-        router = router.route("/health/leader", get(health_leader_handler));
+        router = router
+            .route("/health/leader", get(health_leader_handler))
+            .route("/health/ready", get(health_ready_handler));
     }
 
     // periodically prune rate limits
@@ -163,4 +165,13 @@ async fn health_leader_handler(
     Extension(Terminating(terminating)): Extension<Terminating>,
 ) -> impl axum::response::IntoResponse {
     crate::k8s::health_leader(is_leader, terminating).await
+}
+
+/// Health check handler for K8s readiness probe
+#[cfg(feature = "k8s")]
+async fn health_ready_handler(
+    Extension(KnownValidatorsLoaded(known_validators_loaded)): Extension<KnownValidatorsLoaded>,
+    Extension(Terminating(terminating)): Extension<Terminating>,
+) -> impl axum::response::IntoResponse {
+    crate::k8s::health_ready(known_validators_loaded, terminating).await
 }
