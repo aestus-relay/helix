@@ -75,17 +75,27 @@ K8sLeaderElectionConfig {
 
 ### 2. Health Checks (`health.rs`)
 
-Provides Kubernetes health check endpoints for leader election.
+Provides health check endpoints for leader election and pod readiness.
 
 **Endpoints:**
-- `GET /health/leader` - Readiness probe endpoint
+
+- `GET /health/ready` - Generic readiness probe endpoint
+  - Returns `200 OK` if pod is initialized and not terminating
+  - Returns `503 SERVICE_UNAVAILABLE` if initializing or terminating
+  - Used by Kubernetes `readinessProbe` to determine pod readiness
+  - **All pods (leader + followers) report ready** to allow rolling updates
+
+- `GET /health/leader` - Leader-specific health endpoint
   - Returns `200 OK` if pod is leader and not terminating
   - Returns `503 SERVICE_UNAVAILABLE` if follower or terminating
+  - Used by gateway implementations for active health checks
+  - **Only the leader pod is marked healthy** and receives traffic
 
 **Integration:**
-- Used by Kubernetes `readinessProbe` to determine pod readiness
-- Only the leader pod is marked as "Ready" and receives traffic
-- Followers remain "Not Ready" but are healthy and ready to become leader
+- Kubernetes uses `/health/ready` for pod readiness (all healthy pods report Ready)
+- Gateway uses `/health/leader` for active health checks (only leader is healthy)
+- This separation allows rolling updates to work while maintaining leader-only traffic routing
+- Followers remain "Ready" in Kubernetes but "Unhealthy" for traffic routing
 
 ### 3. Slot-Aware Shutdown (`slot_aware_shutdown.rs`)
 
@@ -219,10 +229,10 @@ spec:
           name: api
         readinessProbe:
           httpGet:
-            path: /health/leader
+            path: /health/ready
             port: 4040
           initialDelaySeconds: 5
-          periodSeconds: 1
+          periodSeconds: 5
           failureThreshold: 2
         livenessProbe:
           httpGet:
@@ -258,6 +268,53 @@ k8s_leader_election:
   slot_completion_timeout_seconds: 4
   rotation_interval_slots: 32
 ```
+
+### Gateway Integration
+
+When using a Kubernetes Gateway API implementation, configure active health checks to route traffic only to the leader pod.
+
+**Requirements:**
+- Gateway must support custom HTTP active health checks
+- Gateway must support per-backend health status tracking
+- Health check endpoint: `/health/leader`
+- Expected response: `200 OK` for healthy (leader), `503` for unhealthy (follower)
+
+**Example Configuration (Generic Gateway API):**
+
+```yaml
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: relay-route
+  namespace: default
+spec:
+  parentRefs:
+  - name: gateway
+    namespace: gateway-system
+  hostnames:
+  - "relay.example.com"
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - name: relay-api-auction-helix
+      port: 4040
+```
+
+Configure your gateway's health check policy to use `/health/leader` with appropriate settings:
+- Health check path: `/health/leader`
+- Expected status: `200`
+- Check interval: 1-2 seconds
+- Unhealthy threshold: 2 consecutive failures
+- Healthy threshold: 1 success
+
+**How it works:**
+1. Kubernetes readiness probes use `/health/ready` - all pods report ready
+2. Gateway active health checks use `/health/leader` - only leader is healthy
+3. Rolling updates work normally (no deadlock from Not Ready pods)
+4. Traffic is routed only to the leader via gateway health checks
 
 ## Edge Cases and Mitigations
 
@@ -332,7 +389,8 @@ k8s_leader_election:
 
 1. **Pods stuck in 0/1 Ready state**
    - Check if leader election is enabled
-   - Verify `/health/leader` endpoint returns 200 for leader
+   - Verify `/health/ready` endpoint returns 200 for all healthy pods
+   - Verify `/health/leader` endpoint returns 200 for leader only
    - Check lease acquisition logs
 
 2. **Frequent leader changes**
@@ -343,12 +401,17 @@ k8s_leader_election:
 3. **Slow rollouts**
    - Increase `terminationGracePeriodSeconds`
    - Check slot completion timeout
-   - Verify readiness probe configuration
+   - Verify readiness probe uses `/health/ready` (not `/health/leader`)
 
 4. **Lease contention**
    - Check for synchronized retries
    - Verify jitter is working
    - Consider increasing lease duration
+
+5. **Traffic going to followers**
+   - Verify gateway health check policy is configured
+   - Check gateway active health checks are using `/health/leader`
+   - Verify health check interval and threshold settings
 
 ### Debug Commands
 
@@ -359,8 +422,11 @@ kubectl get lease helix-relay-leader -o yaml
 # Check pod readiness
 kubectl get pods -l app=relay-api-auction-helix
 
-# Check leader health
-kubectl exec -it <leader-pod> -- curl localhost:4040/health/leader
+# Check generic readiness (should return 200 for all healthy pods)
+kubectl exec -it <pod-name> -- curl -s -o /dev/null -w "%{http_code}" localhost:4040/health/ready
+
+# Check leader health (should return 200 for leader only)
+kubectl exec -it <pod-name> -- curl -s -o /dev/null -w "%{http_code}" localhost:4040/health/leader
 
 # View logs
 kubectl logs -f <pod-name> | grep -E "(leader|lease|rotation)"
@@ -384,7 +450,6 @@ kubectl logs -f <pod-name> | grep -E "(leader|lease|rotation)"
 ## Future Improvements
 
 1. **Configurable Jitter**: Make jitter percentage configurable
-2. **Health Endpoint Separation**: Separate readiness from leader status
-3. **Metrics Enhancement**: Add more detailed timing metrics
-4. **Circuit Breaker**: Add circuit breaker for K8s API calls
-5. **Lease Preemption**: Support for lease preemption during high-priority transitions
+2. **Metrics Enhancement**: Add more detailed timing metrics
+3. **Circuit Breaker**: Add circuit breaker for K8s API calls
+4. **Lease Preemption**: Support for lease preemption during high-priority transitions
