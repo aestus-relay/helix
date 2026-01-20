@@ -1,6 +1,6 @@
-use std::sync::Arc;
+use std::{net::SocketAddr, sync::Arc};
 
-use axum::Extension;
+use axum::{Extension, extract::ConnectInfo};
 use flux::timing::Nanos;
 use helix_common::{
     self, RequestTimings, SubmissionTrace, api_provider::ApiProvider,
@@ -26,10 +26,12 @@ impl<A: Api> BuilderApi<A> {
         builder_pubkey = tracing::field::Empty,
         builder_id = tracing::field::Empty,
         block_hash = tracing::field::Empty,
+        client_ip = tracing::field::Empty,
     ))]
     pub async fn submit_block(
         Extension(api): Extension<Arc<BuilderApi<A>>>,
         Extension(timings): Extension<RequestTimings>,
+        ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
         headers: HeaderMap,
         body: bytes::Bytes,
     ) -> Result<(), BuilderApiError> {
@@ -38,6 +40,9 @@ impl<A: Api> BuilderApi<A> {
         tracing::Span::current().record("id", tracing::field::display(request_id));
 
         trace!("start handler");
+
+        let client_ip = get_client_ip(&headers, remote_addr);
+        tracing::Span::current().record("client_ip", &client_ip);
 
         let mut trace = SubmissionTrace::init_from_timings(timings);
         trace.metadata = api.api_provider.get_metadata(&headers);
@@ -92,4 +97,17 @@ fn observe_client_to_server_latency(headers: &HeaderMap, receive_ns: u64) {
                 .observe((receive_ns.saturating_sub(send_ts.0) / 1000) as f64);
         }
     }
+}
+
+fn get_client_ip(headers: &HeaderMap, remote_addr: SocketAddr) -> String {
+    if let Some(real_ip) = headers.get("X-Real-IP").and_then(|v| v.to_str().ok()) {
+        return real_ip.to_string();
+    }
+    if let Some(forwarded) = headers.get("X-Forwarded-For").and_then(|v| v.to_str().ok()) {
+        let ip = forwarded.split(',').next().unwrap_or_default().trim();
+        if !ip.is_empty() {
+            return ip.to_string();
+        }
+    }
+    remote_addr.ip().to_string()
 }
