@@ -1,7 +1,8 @@
-use std::{sync::Arc, time::Duration};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use axum::{
     Extension,
+    extract::ConnectInfo,
     response::{IntoResponse, Response},
 };
 use flux::timing::{IngestionTime, Nanos};
@@ -32,10 +33,12 @@ impl<A: Api> BuilderApi<A> {
         builder_pubkey = tracing::field::Empty,
         builder_id = tracing::field::Empty,
         block_hash = tracing::field::Empty,
+        client_ip = tracing::field::Empty,
     ))]
     pub async fn submit_block(
         Extension(api): Extension<Arc<BuilderApi<A>>>,
         Extension(timings): Extension<RequestTimings>,
+        ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
         headers: HeaderMap,
         body: bytes::Bytes,
     ) -> Response {
@@ -44,6 +47,9 @@ impl<A: Api> BuilderApi<A> {
         tracing::Span::current().record("id", tracing::field::display(id));
 
         trace!("start handler");
+
+        let client_ip = get_client_ip(&headers, remote_addr);
+        tracing::Span::current().record("client_ip", &client_ip);
 
         let mut trace = SubmissionTrace::init_from_timings(timings);
         trace.metadata =
@@ -88,7 +94,7 @@ impl<A: Api> BuilderApi<A> {
                 (result.http_status, result.error_msg.to_string()).into_response()
             }
         } else {
-            tracing::error!("timeout while waiting for bid submission processing respopnse");
+            tracing::error!("timeout while waiting for bid submission processing response");
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
     }
@@ -102,4 +108,17 @@ fn observe_client_to_server_latency(headers: &HeaderMap, receive_ns: u64) {
             .with_label_values(&["http"])
             .observe((receive_ns.saturating_sub(send_ts.0) / 1000) as f64);
     }
+}
+
+fn get_client_ip(headers: &HeaderMap, remote_addr: SocketAddr) -> String {
+    if let Some(real_ip) = headers.get("X-Real-IP").and_then(|v| v.to_str().ok()) {
+        return real_ip.to_string();
+    }
+    if let Some(forwarded) = headers.get("X-Forwarded-For").and_then(|v| v.to_str().ok()) {
+        let ip = forwarded.split(',').next().unwrap_or_default().trim();
+        if !ip.is_empty() {
+            return ip.to_string();
+        }
+    }
+    remote_addr.ip().to_string()
 }
