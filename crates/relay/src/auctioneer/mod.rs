@@ -359,6 +359,7 @@ impl State {
                 trace!("received in auctioneer");
 
                 if let Some(local) = ctx.payloads.get(&block_hash) {
+                    let builder_pubkey = local.bid_data.builder_pubkey;
                     if let Some(block_hash) = ctx.handle_get_payload(
                         local.payload_and_blobs(),
                         *blinded,
@@ -367,7 +368,12 @@ impl State {
                         slot_data,
                         local.bid_data_ref().to_owned(),
                     ) {
-                        info!(bid_slot =% slot_data.bid_slot, %block_hash, "broadcasting block");
+                        info!(
+                            bid_slot =% slot_data.bid_slot,
+                            %block_hash,
+                            %builder_pubkey,
+                            "broadcasting block"
+                        );
                         *self = State::Broadcasting { slot_data: slot_data.clone(), block_hash }
                     }
                 } else if ctx.pending_payload.is_none() {
