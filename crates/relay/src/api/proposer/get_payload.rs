@@ -8,7 +8,7 @@ use helix_common::{
     chain_info::ChainInfo,
     decoder::{Encoding, HEADER_SSZ},
     spawn_tracked,
-    utils::{extract_request_id, utcnow_ns},
+    utils::{extract_request_id, utcnow_ms, utcnow_ns},
 };
 use helix_database::types::SavePayloadParams;
 use helix_types::{
@@ -263,8 +263,15 @@ impl<A: Api> ProposerApi<A> {
         let proposer_fee_recipient = slot_duty.entry.registration.message.fee_recipient;
         let filtering = slot_duty.entry.preferences.filtering;
 
-        info!(%head_slot, request_ts = trace.receive, %block_hash);
         let slot = signed_blinded_block.message().slot();
+
+        // Compute slot-relative timing for metrics
+        let slot_start_ms = ((self.chain_info.genesis_time_in_secs +
+            (slot.as_u64() * self.chain_info.seconds_per_slot())) * 1000) as i64;
+        let receive_ms_into_slot = ((trace.receive / 1_000_000) as i64)
+            .saturating_sub(slot_start_ms).max(0) as u64;
+
+        info!(%head_slot, request_ts = trace.receive, receive_ms_into_slot, %block_hash);
 
         // Verify that the request is for the current slot
         if slot <= head_slot {
@@ -356,9 +363,14 @@ impl<A: Api> ProposerApi<A> {
         let self_clone = self.clone();
         let mut trace_clone = *trace;
         let payload_clone = to_proposer.data.clone();
+        let block_hash_for_task = block_hash;
 
         let handle = spawn_tracked!(async move {
             let mut failed_publishing = false;
+
+            let publish_start_ns = utcnow_ns();
+            let publish_start_ms_into_slot = ((publish_start_ns / 1_000_000) as i64)
+                .saturating_sub(slot_start_ms).max(0) as u64;
 
             if let Err(err) = self_clone
                 .multi_beacon_client
@@ -374,6 +386,20 @@ impl<A: Api> ProposerApi<A> {
             };
 
             trace_clone.beacon_client_broadcast = utcnow_ns();
+            let beacon_publish_latency_ms = (trace_clone.beacon_client_broadcast - publish_start_ns) / 1_000_000;
+            let publish_complete_ms_into_slot = ((trace_clone.beacon_client_broadcast / 1_000_000) as i64)
+                .saturating_sub(slot_start_ms).max(0) as u64;
+
+            // Log beacon publish timing (accurate for both V1 and V2)
+            info!(
+                receive_ms_into_slot,
+                publish_start_ms_into_slot,
+                beacon_publish_latency_ms,
+                publish_complete_ms_into_slot,
+                block_hash = %block_hash_for_task,
+                failed_publishing,
+                "beacon block published"
+            );
 
             trace_clone.broadcaster_block_broadcast = utcnow_ns();
 
@@ -392,7 +418,7 @@ impl<A: Api> ProposerApi<A> {
                 )
                 .await;
 
-            (trace_clone, failed_publishing)
+            (trace_clone, failed_publishing, beacon_publish_latency_ms)
         });
 
         if let Some(merged_block) = self.local_cache.get_merged_block(&block_hash) {
@@ -400,7 +426,7 @@ impl<A: Api> ProposerApi<A> {
         }
 
         if matches!(api_version, ProposerApiVersion::V1) {
-            let Ok((new_trace, failed_publishing)) = handle.await else {
+            let Ok((new_trace, failed_publishing, _publish_latency)) = handle.await else {
                 return Err(ProposerApiError::InternalServerError);
             };
             *trace = new_trace;
@@ -431,7 +457,15 @@ impl<A: Api> ProposerApi<A> {
         let _ = dedup_tx.send(Arc::new(Some(to_proposer.clone())));
 
         // Return response
-        info!(?trace, timestamp = utcnow_ns(), "delivering payload");
+        let response_ms_into_slot = (utcnow_ms() as i64)
+            .saturating_sub(slot_start_ms).max(0) as u64;
+        
+        info!(
+            receive_ms_into_slot,
+            response_ms_into_slot,
+            %block_hash,
+            "delivering payload"
+        );
         Ok(to_proposer)
     }
 

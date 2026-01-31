@@ -15,7 +15,7 @@ use helix_common::{
     BuilderInfo, RelayConfig,
     chain_info::ChainInfo,
     local_cache::LocalCache,
-    metrics::{CACHE_SIZE, SimulatorMetrics},
+    metrics::{CACHE_SIZE, SimulatorMetrics, get_payload_outcome},
     spawn_tracked,
 };
 use helix_database::handle::DbHandle;
@@ -240,6 +240,7 @@ impl<B: BidAdjustor> Context<B> {
     pub fn on_new_slot(&mut self, bid_slot: Slot, producers: &mut HelixSpineProducers) {
         self.bid_slot = bid_slot;
         if let Some(pending) = self.pending_payload.take() {
+            get_payload_outcome("pending_timeout");
             let _ = pending
                 .res_tx
                 .send(Err(crate::api::proposer::ProposerApiError::NoExecutionPayloadFound));
