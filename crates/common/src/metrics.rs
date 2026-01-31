@@ -457,6 +457,15 @@ lazy_static! {
     )
     .unwrap();
 
+    //////////////// GET PAYLOAD ////////////////
+    pub static ref GET_PAYLOAD_OUTCOME: IntCounterVec = register_int_counter_vec_with_registry!(
+        "get_payload_outcome_total",
+        "Outcome of getPayload requests",
+        &["outcome"],  // "immediate", "pending_fulfilled", "pending_timeout"
+        &RELAY_METRICS_REGISTRY
+    )
+    .unwrap();
+
     //////////////// DECODING BLOCKS ////////////////
 
     pub static ref SUBMISSION_BY_COMPRESSION: IntCounterVec = register_int_counter_vec_with_registry!(
@@ -811,4 +820,9 @@ pub fn delivered_payloads_cache_hit() {
 
 pub fn bids_cache_hit() {
     BIDS_CACHE_HIT.inc();
+}
+
+/// Record getPayload outcome: "immediate", "pending_fulfilled", or "pending_timeout"
+pub fn get_payload_outcome(outcome: &str) {
+    GET_PAYLOAD_OUTCOME.with_label_values(&[outcome]).inc();
 }

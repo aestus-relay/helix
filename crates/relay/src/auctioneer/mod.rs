@@ -28,7 +28,10 @@ use helix_common::{
     },
     chain_info::ChainInfo,
     local_cache::LocalCache,
-    metrics::{STATE_TRANSITION_COUNT, STATE_TRANSITION_LATENCY, WORKER_QUEUE_LEN, WORKER_UTIL},
+    metrics::{
+        STATE_TRANSITION_COUNT, STATE_TRANSITION_LATENCY, WORKER_QUEUE_LEN, WORKER_UTIL,
+        get_payload_outcome,
+    },
     record_submission_step,
     utils::pin_thread_to_core,
 };
@@ -396,6 +399,7 @@ impl State {
 
                 if let Some(local) = ctx.payloads.get(&block_hash) {
                     let builder_pubkey = *local.bid_data_ref().builder_pubkey;
+                    get_payload_outcome("immediate");
                     if let Some(block_hash) = ctx.handle_get_payload(
                         local.payload_and_blobs(),
                         *blinded,

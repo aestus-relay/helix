@@ -1,5 +1,5 @@
 use alloy_primitives::B256;
-use helix_common::GetPayloadTrace;
+use helix_common::{GetPayloadTrace, metrics::get_payload_outcome};
 use helix_types::{
     BeaconBlockBodyElectra, BeaconBlockBodyFulu, BeaconBlockElectra, BeaconBlockFulu,
     GetPayloadResponse, PayloadAndBlobs, SignedBeaconBlock, SignedBeaconBlockElectra,
@@ -80,6 +80,7 @@ impl<B: BidAdjustor> Context<B> {
         let pending = self.pending_payload.take()?;
 
         if let Some(local) = self.payloads.get(&pending.block_hash) {
+            get_payload_outcome("pending_fulfilled");
             info!("found payload for pending get_payload");
             let PendingPayload { blinded, res_tx, trace, .. } = pending;
             self.handle_get_payload(

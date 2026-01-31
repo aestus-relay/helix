@@ -10,7 +10,7 @@ use std::{
 use alloy_primitives::{B256, U256};
 use helix_common::{
     BuilderConfig, BuilderInfo, RelayConfig, chain_info::ChainInfo, local_cache::LocalCache,
-    metrics::SimulatorMetrics, spawn_tracked, utils::alert_discord,
+    metrics::{SimulatorMetrics, get_payload_outcome}, spawn_tracked, utils::alert_discord,
 };
 use helix_types::{BlsPublicKeyBytes, HydrationCache, Slot, SubmissionVersion};
 use rustc_hash::FxHashMap;
@@ -251,6 +251,7 @@ impl<B: BidAdjustor> Context<B> {
     pub fn on_new_slot(&mut self, bid_slot: Slot) {
         self.bid_slot = bid_slot;
         if let Some(pending) = self.pending_payload.take() {
+            get_payload_outcome("pending_timeout");
             let _ = pending
                 .res_tx
                 .send(Err(crate::api::proposer::ProposerApiError::NoExecutionPayloadFound));

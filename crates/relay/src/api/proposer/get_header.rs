@@ -72,7 +72,7 @@ impl<A: Api> ProposerApi<A> {
             return Err(ProposerApiError::ProposerNotRegistered);
         };
 
-        let ms_into_slot = validate_bid_request_time(&proposer_api.chain_info, &params)?;
+        let (ms_into_slot, slot_start_ms) = validate_bid_request_time(&proposer_api.chain_info, &params)?;
         trace.validation_complete = utcnow_ns();
 
         trace!(ms_into_slot, "completed validation");
@@ -89,6 +89,7 @@ impl<A: Api> ProposerApi<A> {
                         ms_into_slot)
             .map_err(ProposerApiError::InvalidGetHeader)?;
 
+        let delay_ms = sleep_time.map(|d| d.as_millis() as u64).unwrap_or(0);
         let mut timing_guard = TimeoutGuard::default();
 
         if let Some(sleep_time) = sleep_time {
@@ -105,7 +106,8 @@ impl<A: Api> ProposerApi<A> {
             timing_guard.done_sleep = true;
         };
 
-        trace!("done sleep");
+        let query_ms_into_slot = (utcnow_ms() as i64).saturating_sub(slot_start_ms).max(0) as u64;
+        trace!(query_ms_into_slot, "done sleep");
 
         let Ok(rx) = proposer_api.auctioneer_handle.get_header(params) else {
             error!("failed to send get_header to auctioneer");
@@ -172,7 +174,17 @@ impl<A: Api> ProposerApi<A> {
         }
 
         let signed_bid = serde_json::to_value(signed_bid)?;
-        info!(block_hash =% bid_block_hash, ?value, "delivering bid");
+        let response_ms_into_slot = (utcnow_ms() as i64).saturating_sub(slot_start_ms).max(0) as u64;
+        info!(
+            block_hash =% bid_block_hash,
+            ?value,
+            ms_into_slot,
+            delay_ms,
+            query_ms_into_slot,
+            response_ms_into_slot,
+            is_mev_boost,
+            "delivering bid"
+        );
 
         timing_guard.done_fetch = true;
         Ok(axum::Json(signed_bid))
@@ -201,15 +213,15 @@ impl Drop for TimeoutGuard {
 ///
 /// - Only allows requests for the current slot until a certain cutoff time.
 ///
-/// Returns how many ms we are into the slot if ok.
+/// Returns (ms_into_slot, slot_start_ms) if ok.
 fn validate_bid_request_time(
     chain_info: &ChainInfo,
     bid_request: &GetHeaderParams,
-) -> Result<u64, ProposerApiError> {
+) -> Result<(u64, i64), ProposerApiError> {
     let curr_timestamp_ms = utcnow_ms() as i64;
-    let slot_start_timestamp =
-        chain_info.genesis_time_in_secs + (bid_request.slot * chain_info.seconds_per_slot());
-    let ms_into_slot = curr_timestamp_ms.saturating_sub((slot_start_timestamp * 1000) as i64);
+    let slot_start_ms =
+        ((chain_info.genesis_time_in_secs + (bid_request.slot * chain_info.seconds_per_slot())) * 1000) as i64;
+    let ms_into_slot = curr_timestamp_ms.saturating_sub(slot_start_ms);
 
     if ms_into_slot > GET_HEADER_REQUEST_CUTOFF_MS {
         return Err(ProposerApiError::GetHeaderRequestTooLate {
@@ -218,7 +230,7 @@ fn validate_bid_request_time(
         });
     }
 
-    Ok(ms_into_slot.max(0) as u64)
+    Ok((ms_into_slot.max(0) as u64, slot_start_ms))
 }
 
 /// Signs the builder bid with the relay key. This is necessary because the relay is the "builder"
