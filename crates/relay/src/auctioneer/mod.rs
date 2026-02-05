@@ -408,7 +408,7 @@ impl State {
                 trace!("received in auctioneer");
 
                 if let Some(local) = ctx.payloads.get(&block_hash) {
-                    let builder_pubkey = local.bid_data.builder_pubkey;
+                    let builder_pubkey = *local.bid_data_ref().builder_pubkey;
                     if let Some(block_hash) = ctx.handle_get_payload(
                         local.payload_and_blobs(),
                         *blinded,
