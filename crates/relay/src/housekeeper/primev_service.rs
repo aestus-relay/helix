@@ -8,6 +8,7 @@ use ethers::{
 };
 use helix_common::{PrimevConfig, ProposerDuty};
 use helix_types::BlsPublicKeyBytes;
+use indexmap::IndexMap;
 use tracing::{debug, error};
 
 #[derive(Debug, EthEvent)]
@@ -148,14 +149,27 @@ impl EthereumPrimevService {
             }
         };
 
-        let mut result = Vec::new();
+        // Deduplicate builders to avoid database conflict with batches containing duplicate builder BLSKey entries
+        // This ensures "latest event wins" semantics for builders that re-register
+        let mut unique_keys: IndexMap<BlsPublicKeyBytes, ()> = IndexMap::new();
+        
         for (i, value) in providers.iter().enumerate() {
             if let Some(key) = process_bls_key_data(&value.bls_public_key) {
-                result.push(key);
+                // Insert overwrites any previous entry, so latest wins
+                unique_keys.insert(key, ());
             } else {
                 error!("Failed to extract BLS key from event {}", i);
             }
         }
+
+        let result: Vec<BlsPublicKeyBytes> = unique_keys.into_keys().collect();
+        
+        debug!(
+            total_events = providers.len(),
+            unique_builders = result.len(),
+            duplicates_removed = providers.len().saturating_sub(result.len()),
+            "deduplicated primev builders"
+        );
 
         result
     }
