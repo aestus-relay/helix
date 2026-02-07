@@ -288,6 +288,7 @@ impl SubWorker {
 
         let flags = DecodeFlags {
             skip_sigverify,
+            block_deltas_auth: self.config.block_deltas_auth,
             merge_type,
             with_adjustment: with_adjustments,
             block_merging_dry_run: self.config.block_merging_config.is_dry_run,
@@ -412,6 +413,7 @@ impl RegWorker {
 
 struct DecodeFlags {
     skip_sigverify: bool,
+    block_deltas_auth: bool,
     merge_type: Option<MergeType>,
     with_adjustment: bool,
     block_merging_dry_run: bool,
@@ -424,9 +426,13 @@ fn decode_dehydrated(
     chain_info: &ChainInfo,
     flags: &DecodeFlags,
 ) -> Result<(Submission, Option<BlockMergingData>, Option<BidAdjustmentData>), BuilderApiError> {
-    if !flags.skip_sigverify {
+    if flags.block_deltas_auth && !flags.skip_sigverify {
         return Err(BuilderApiError::UntrustedBuilderOnDehydratedPayload);
     }
+
+    // When block_deltas_auth is false and no API key was provided,
+    // fall back to BLS signature verification to prove builder identity.
+    let needs_sig_verify = !flags.block_deltas_auth && !flags.skip_sigverify;
 
     let (submission, bid_adjustment) = if flags.with_adjustment {
         let sub_with_adjustment: DehydratedBidSubmissionFuluWithAdjustments =
@@ -442,6 +448,14 @@ fn decode_dehydrated(
     };
 
     trace.decoded = utcnow_ns();
+
+    if needs_sig_verify {
+        trace!("verifying dehydrated signature");
+        let start_sig = Instant::now();
+        submission.verify_signature(chain_info.builder_domain)?;
+        trace!("dehydrated signature ok");
+        record_submission_step("signature", start_sig.elapsed());
+    }
 
     let merging_data = match flags.merge_type {
         Some(MergeType::Mergeable) => {
