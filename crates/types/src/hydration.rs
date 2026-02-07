@@ -13,7 +13,8 @@ use crate::{
     BidTrace, Blob, BlobsBundle, BlockValidationError, BlsPublicKeyBytes, BlsSignatureBytes,
     ExecutionPayload, SignedBidSubmission,
     bid_adjustment_data::BidAdjustmentData,
-    bid_submission,
+    bid_submission::{self, verify_bid_signature},
+    error::SigError,
     fields::{ExecutionRequests, KzgCommitment, KzgProof, Transaction},
 };
 
@@ -81,6 +82,14 @@ impl DehydratedBidSubmission {
     pub fn parent_hash(&self) -> &B256 {
         match self {
             DehydratedBidSubmission::Fulu(s) => &s.message.parent_hash,
+        }
+    }
+
+    pub fn verify_signature(&self, builder_domain: B256) -> Result<(), SigError> {
+        match self {
+            DehydratedBidSubmission::Fulu(s) => {
+                verify_bid_signature(&s.message, &s.signature, builder_domain)
+            }
         }
     }
 

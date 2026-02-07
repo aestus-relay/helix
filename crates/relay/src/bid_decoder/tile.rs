@@ -317,9 +317,16 @@ impl DecoderTile {
             Submission::Full(ref mut signed_bid_submission) => {
                 verify_and_validate(signed_bid_submission, skip_sigverify, chain_info)?;
             }
-            Submission::Dehydrated { .. } => {
-                if !skip_sigverify {
+            Submission::Dehydrated(ref dehydrated) => {
+                if config.block_deltas_auth && !skip_sigverify {
                     return Err(BuilderApiError::UntrustedBuilderOnDehydratedPayload);
+                }
+                if !config.block_deltas_auth && !skip_sigverify {
+                    trace!("verifying dehydrated signature");
+                    let start_sig = Nanos::now();
+                    dehydrated.verify_signature(chain_info.builder_domain)?;
+                    trace!("dehydrated signature ok");
+                    record_submission_step("signature", start_sig.elapsed());
                 }
             }
         }

@@ -60,6 +60,26 @@ impl TestRandom for BidTrace {
 
 impl SignedRoot for BidTrace {}
 
+/// Verify a BLS signature over a `BidTrace` message.
+/// Used by both full (`SignedBidSubmission`) and dehydrated submissions.
+pub fn verify_bid_signature(
+    message: &BidTrace,
+    signature: &BlsSignatureBytes,
+    builder_domain: B256,
+) -> Result<(), SigError> {
+    let uncompressed_pubkey = BlsPublicKey::deserialize(message.builder_pubkey.as_slice())
+        .map_err(|_| SigError::InvalidBlsPubkeyBytes)?;
+    let uncompressed_signature = BlsSignature::deserialize(signature.as_slice())
+        .map_err(|_| SigError::InvalidBlsSignatureBytes)?;
+
+    let signing_root = message.signing_root(builder_domain);
+    if !uncompressed_signature.verify(&uncompressed_pubkey, signing_root) {
+        return Err(SigError::InvalidBlsSignature);
+    }
+
+    Ok(())
+}
+
 impl BidTrace {
     pub fn slot(&self) -> Slot {
         Slot::from(self.slot)
@@ -482,20 +502,7 @@ impl SignedBidSubmission {
     }
 
     pub fn verify_signature(&self, builder_domain: B256) -> Result<(), SigError> {
-        let uncompressed_builder_pubkey =
-            BlsPublicKey::deserialize(self.message.builder_pubkey.as_slice())
-                .map_err(|_| SigError::InvalidBlsPubkeyBytes)?;
-        let uncompressed_signature = BlsSignature::deserialize(self.signature.as_slice())
-            .map_err(|_| SigError::InvalidBlsSignatureBytes)?;
-
-        let message = self.message.signing_root(builder_domain);
-        let valid = uncompressed_signature.verify(&uncompressed_builder_pubkey, message);
-
-        if !valid {
-            return Err(SigError::InvalidBlsSignature);
-        }
-
-        Ok(())
+        verify_bid_signature(&self.message, &self.signature, builder_domain)
     }
 
     pub fn num_txs(&self) -> usize {
