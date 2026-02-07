@@ -15,7 +15,8 @@ use crate::{
     BlsSignatureBytes, ExecutionPayload, SignedBidSubmission, SignedBidSubmissionElectra,
     SignedBidSubmissionFulu,
     bid_adjustment_data::BidAdjustmentData,
-    bid_submission,
+    bid_submission::{self, verify_bid_signature},
+    error::SigError,
     fields::{ExecutionRequests, KzgCommitment, KzgProof, Transaction},
 };
 
@@ -92,6 +93,14 @@ impl DehydratedBidSubmission {
             DehydratedBidSubmission::Electra(s) => &s.message.parent_hash,
             DehydratedBidSubmission::Fulu(s) => &s.message.parent_hash,
         }
+    }
+
+    pub fn verify_signature(&self, builder_domain: B256) -> Result<(), SigError> {
+        let (message, signature) = match self {
+            DehydratedBidSubmission::Electra(s) => (&s.message, &s.signature),
+            DehydratedBidSubmission::Fulu(s) => (&s.message, &s.signature),
+        };
+        verify_bid_signature(message, signature, builder_domain)
     }
 
     pub fn hydrate(
