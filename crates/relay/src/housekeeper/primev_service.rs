@@ -8,7 +8,7 @@ use ethers::{
 };
 use helix_common::{PrimevConfig, ProposerDuty};
 use helix_types::BlsPublicKeyBytes;
-use indexmap::IndexMap;
+use std::collections::HashSet;
 use tracing::{debug, error};
 
 #[derive(Debug, EthEvent)]
@@ -150,19 +150,17 @@ impl EthereumPrimevService {
         };
 
         // Deduplicate builders to avoid database conflict with batches containing duplicate builder BLSKey entries
-        // This ensures "latest event wins" semantics for builders that re-register
-        let mut unique_keys: IndexMap<BlsPublicKeyBytes, ()> = IndexMap::new();
+        let mut unique_keys = HashSet::new();
         
         for (i, value) in providers.iter().enumerate() {
             if let Some(key) = process_bls_key_data(&value.bls_public_key) {
-                // Insert overwrites any previous entry, so latest wins
-                unique_keys.insert(key, ());
+                unique_keys.insert(key);
             } else {
                 error!("Failed to extract BLS key from event {}", i);
             }
         }
 
-        let result: Vec<BlsPublicKeyBytes> = unique_keys.into_keys().collect();
+        let result: Vec<BlsPublicKeyBytes> = unique_keys.into_iter().collect();
         
         debug!(
             total_events = providers.len(),
