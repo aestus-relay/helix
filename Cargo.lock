@@ -5812,7 +5812,6 @@ dependencies = [
  "httpmock",
  "hyper 1.8.1",
  "hyper-util",
- "indexmap 2.13.0",
  "k8s-openapi",
  "kube",
  "lazy_static",
