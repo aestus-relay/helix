@@ -57,6 +57,7 @@ strum_macros.workspace = true
 thiserror.workspace = true
 tikv-jemallocator.workspace = true
 tokio.workspace = true
+tokio-util.workspace = true
 tokio-postgres.workspace = true
 tokio-tungstenite.workspace = true
 tonic.workspace = true

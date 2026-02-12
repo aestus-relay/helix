@@ -9,6 +9,8 @@ use helix_common::{
     signing::RelaySigningContext,
 };
 use moka::sync::Cache;
+use parking_lot::RwLock;
+use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
 use crate::{
@@ -47,6 +49,7 @@ pub async fn start_api_service<A: Api>(
     top_bid_tx: tokio::sync::broadcast::Sender<TopBidUpdate>,
     event_channel: (crossbeam_channel::Sender<Event>, crossbeam_channel::Receiver<Event>),
     relay_network_api: RelayNetworkApi,
+    ws_cancellation: Arc<RwLock<CancellationToken>>,
 ) {
     let gossiper = Arc::new(
         GrpcGossiperClientManager::new(config.relays.iter().map(|cfg| cfg.url.clone()).collect())
@@ -77,6 +80,7 @@ pub async fn start_api_service<A: Api>(
         top_bid_tx,
         auctioneer_handle.clone(),
         api_provider.clone(),
+        ws_cancellation,
     );
     let builder_api = Arc::new(builder_api);
 

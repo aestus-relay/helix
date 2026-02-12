@@ -121,12 +121,17 @@ async fn run(instance_id: String, config: RelayConfig, keypair: BlsKeypair) -> e
     let terminating = Arc::new(AtomicBool::default());
     let is_leader = Arc::new(AtomicBool::default());
 
+    // Cancellation token shared between LeaseManager and WebSocket handlers.
+    // Cancelled when leadership is lost to close all active WebSocket connections.
+    let ws_cancellation = Arc::new(parking_lot::RwLock::new(tokio_util::sync::CancellationToken::new()));
+
     // Initialize K8s lease manager if enabled
     #[cfg(feature = "k8s")]
     let lease_manager = if config.k8s_leader_election.enabled {
         match helix_relay::k8s::LeaseManager::new(
             config.k8s_leader_election.clone(),
             is_leader.clone(),
+            ws_cancellation.clone(),
             &current_slot_info,
             chain_info.clone(),
         )
@@ -173,6 +178,7 @@ async fn run(instance_id: String, config: RelayConfig, keypair: BlsKeypair) -> e
         top_bid_tx,
         event_channel,
         relay_network_api.api(),
+        ws_cancellation,
     ));
 
     let termination_grace_period = config.router_config.shutdown_delay_ms;

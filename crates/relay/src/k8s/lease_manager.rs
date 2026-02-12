@@ -19,6 +19,7 @@ use kube::{
 use parking_lot::RwLock;
 use rand::Rng;
 use tokio::time::sleep;
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
 use super::{
@@ -87,6 +88,10 @@ pub struct LeaseManager {
     chain_info: Arc<ChainInfo>,
     shutdown_signal: Arc<AtomicBool>,
     leadership_acquired_slot: Arc<RwLock<Option<u64>>>,
+    /// Cancellation token for the current leadership epoch.
+    /// Cancelled in `on_lost_leadership()` to close all WebSocket connections.
+    /// Replaced with a fresh token in `on_elected_leader()`.
+    ws_cancellation: Arc<RwLock<CancellationToken>>,
 }
 
 impl LeaseManager {
@@ -94,6 +99,7 @@ impl LeaseManager {
     pub async fn new(
         config: K8sLeaderElectionConfig,
         is_leader: Arc<AtomicBool>,
+        ws_cancellation: Arc<RwLock<CancellationToken>>,
         current_slot_info: &CurrentSlotInfo,
         chain_info: Arc<ChainInfo>,
     ) -> Result<Self, LeaseError> {
@@ -127,6 +133,7 @@ impl LeaseManager {
             current_slot_info: current_slot_info.clone(),
             shutdown_signal: Arc::new(AtomicBool::new(false)),
             leadership_acquired_slot: Arc::new(RwLock::new(None)),
+            ws_cancellation,
         })
     }
 
@@ -523,6 +530,10 @@ impl LeaseManager {
         let start_slot = self.initialize_rotation_tracking();
         *self.leadership_acquired_slot.write() = start_slot;
         
+        // Mint a fresh cancellation token for this leadership epoch.
+        // Any new WebSocket connections will clone this token.
+        *self.ws_cancellation.write() = CancellationToken::new();
+
         match start_slot {
             Some(slot) => {
                 info!(
@@ -547,6 +558,11 @@ impl LeaseManager {
     /// Called when this pod loses leadership
     fn on_lost_leadership(&self) {
         warn!(pod_name = self.pod_name, "Lost leadership");
+
+        // Cancel all WebSocket connections from this leadership epoch.
+        // This must happen before flipping is_leader so that tasks waking
+        // from the cancellation still see a consistent state.
+        self.ws_cancellation.read().cancel();
         
         // Clear leadership slot tracking
         *self.leadership_acquired_slot.write() = None;

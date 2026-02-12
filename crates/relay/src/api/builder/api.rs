@@ -2,6 +2,8 @@ use std::sync::Arc;
 
 use axum::{Extension, http::StatusCode, response::IntoResponse};
 use helix_common::{RelayConfig, api::builder_api::TopBidUpdate, local_cache::LocalCache};
+use parking_lot::RwLock;
+use tokio_util::sync::CancellationToken;
 
 use crate::{
     api::Api, auctioneer::AuctioneerHandle,
@@ -20,6 +22,9 @@ pub struct BuilderApi<A: Api> {
     pub top_bid_tx: tokio::sync::broadcast::Sender<TopBidUpdate>,
     pub auctioneer_handle: AuctioneerHandle,
     pub api_provider: Arc<A::ApiProvider>,
+    /// Cancellation token for the current leadership epoch.
+    /// Cloned per WebSocket connection so they close on leader rotation.
+    pub ws_cancellation: Arc<RwLock<CancellationToken>>,
 }
 
 impl<A: Api> BuilderApi<A> {
@@ -31,6 +36,7 @@ impl<A: Api> BuilderApi<A> {
         top_bid_tx: tokio::sync::broadcast::Sender<TopBidUpdate>,
         auctioneer_handle: AuctioneerHandle,
         api_provider: Arc<A::ApiProvider>,
+        ws_cancellation: Arc<RwLock<CancellationToken>>,
     ) -> Self {
         Self {
             local_cache,
@@ -40,6 +46,7 @@ impl<A: Api> BuilderApi<A> {
             top_bid_tx,
             auctioneer_handle,
             api_provider,
+            ws_cancellation,
         }
     }
 

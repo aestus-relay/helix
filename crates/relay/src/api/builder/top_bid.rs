@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use axum::{
     Extension,
-    extract::ws::{Message, WebSocket, WebSocketUpgrade},
+    extract::ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade},
     response::IntoResponse,
 };
 use bytes::Bytes;
@@ -10,6 +10,7 @@ use futures::StreamExt;
 use helix_common::{self, api::builder_api::TopBidUpdate, metrics::TopBidMetrics};
 use hyper::HeaderMap;
 use tokio::time::{self};
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error};
 
 use super::api::BuilderApi;
@@ -35,7 +36,10 @@ impl<A: Api> BuilderApi<A> {
         }
 
         let sub = api.top_bid_tx.subscribe();
-        Ok(ws.on_upgrade(move |socket| push_top_bids(socket, sub)))
+        // Snapshot the current leadership epoch's cancellation token.
+        // If leadership is lost, this token is cancelled and the connection closes.
+        let cancel = api.ws_cancellation.read().clone();
+        Ok(ws.on_upgrade(move |socket| push_top_bids(socket, sub, cancel)))
     }
 }
 
@@ -47,6 +51,8 @@ impl<A: Api> BuilderApi<A> {
 /// - Sends a ping message every 10 seconds to maintain the connection's liveliness.
 /// - Terminates the connection on sending failures or if a bid stream error occurs, ensuring clean
 ///   disconnection.
+/// - Closes the connection with a 1001 (Going Away) close frame when the leadership epoch ends
+///   (leader rotation or shutdown), signalling clients to reconnect to the new leader.
 ///
 /// This function operates in an asynchronous loop until the WebSocket connection is closed either
 /// due to an error or when the auction ends. It returns after the socket has been closed, logging
@@ -54,12 +60,22 @@ impl<A: Api> BuilderApi<A> {
 async fn push_top_bids(
     mut socket: WebSocket,
     mut bid_stream: tokio::sync::broadcast::Receiver<TopBidUpdate>,
+    cancel: CancellationToken,
 ) {
     let _conn = TopBidMetrics::connection();
     let mut interval = time::interval(Duration::from_secs(10));
 
     loop {
         tokio::select! {
+            _ = cancel.cancelled() => {
+                debug!("Leadership epoch ended, closing WebSocket connection");
+                let _ = socket.send(Message::Close(Some(CloseFrame {
+                    code: 1001, // Going Away
+                    reason: "leader rotation".into(),
+                }))).await;
+                break;
+            },
+
             Ok(bid) = bid_stream.recv() => {
                 if socket.send(Message::Binary(bid.as_ssz_bytes_fast().into())).await.is_err() {
                     error!("Failed to send bid. Disconnecting.");
