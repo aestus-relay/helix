@@ -251,6 +251,12 @@ pub struct TimingGameConfig {
     pub rtt_to_response_scale: f64,
     #[serde(default = "default_u64::<50>")]
     pub latency_request_timeout_ms: u64,
+    #[serde(default = "default_u64::<950>")]
+    pub default_timeout_ms: u64,
+    #[serde(default = "default_u64::<50>")]
+    pub safety_margin_constant_ms: u64,
+    #[serde(default = "default_u64::<5>")]
+    pub safety_margin_linear: u64,
 }
 
 #[derive(Serialize, Deserialize, Clone, Default)]

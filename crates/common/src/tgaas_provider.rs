@@ -51,9 +51,8 @@ impl ApiProvider for TgaasApiProvider {
         // Parse headers for start time, timeout, and user agent
         let now_ms = utcnow_ms();
         let header_start_ms = get_x_mev_boost_header_start_ms(&headers);
-        let mut elapsed_ms = ms_into_slot;
         if let Some(request_initiated_ms) = header_start_ms {
-            elapsed_ms = now_ms.saturating_sub(request_initiated_ms);
+            let elapsed_ms = now_ms.saturating_sub(request_initiated_ms);
             debug!(%request_initiated_ms, %elapsed_ms, "mev-boost start ts header found");
             mev_boost = true;
         }
@@ -98,11 +97,17 @@ impl ApiProvider for TgaasApiProvider {
             }
         }
 
-        info!("Delay determined: {}, ua: {}, pref: {}", delayed, user_agent, preferences.header_delay);
+        info!(delayed,
+              user_agent,
+              header_delay = preferences.header_delay,
+              "Delay determined"
+        );
+
+        let mut delay_ms = 0u64;
 
         // Use client timeout as cap on receive_by_ms
-        // TODO: make safety params configurable
-        if let Some(timeout_ms) = client_timeout_ms {
+        if delayed {
+            let timeout_ms = client_timeout_ms.unwrap_or(self.timing_game_config.default_timeout_ms);
             let timeout_into_slot_ms = if let Some(request_initiated_ms) = header_start_ms {
                 // request_initiated and now are both in unix ms time
                 // If (request_initated - now) is e.g. -100 ms, client header time was at ms_into_slot-100 ms
@@ -112,40 +117,38 @@ impl ApiProvider for TgaasApiProvider {
                 timeout_ms
             };
 
-            let safety_margin_ms = 50 + (elapsed_ms / 5);
+            let safety_margin_ms = self.timing_game_config.safety_margin_constant_ms +
+                (self.timing_game_config.safety_margin_linear / 5);
             let safe_timeout_into_slot_ms = timeout_into_slot_ms.saturating_sub(safety_margin_ms);
 
-            info!("Client timeout {} ms ({} ms into slot) bounds receive_by_ms of {} ms to safe {} ms",
-                    timeout_ms, timeout_into_slot_ms, receive_by_ms, safe_timeout_into_slot_ms
+            info!(header_timeout_ms = timeout_ms,
+                  timeout_into_slot_ms,
+                  receive_by_ms,
+                  safe_timeout_into_slot_ms,
+                  "safe timeout into slot ms calculated"
             );
-  
+
             if receive_by_ms > safe_timeout_into_slot_ms {
                 receive_by_ms = safe_timeout_into_slot_ms;
             }
-        }
 
-        let mut delay_ms = 0u64;
-        let mut response_ms = 0u64;
-        if delayed {
             let client_ip = get_client_ip(&headers, remote_addr);
             // Use ms_into_slot as max_elapsed_ms
-            (elapsed_ms, response_ms) = self.latency_estimator.estimate_timing(header_start_ms, client_ip, ms_into_slot);
+            let (elapsed_ms, response_ms) = self.latency_estimator.estimate_timing(header_start_ms, client_ip, ms_into_slot);
             delay_ms = receive_by_ms.saturating_sub(ms_into_slot + response_ms);
-        }
 
-        // Ensure we don't delay beyond the cutoff.
-        delay_ms = GET_HEADER_REQUEST_CUTOFF_MS
-            .checked_sub(ms_into_slot)
-            .map(|remaining| delay_ms.min(remaining))
-            .unwrap_or(0);
+            // Ensure we don't delay beyond the cutoff.
+            delay_ms = GET_HEADER_REQUEST_CUTOFF_MS
+                .checked_sub(ms_into_slot)
+                .map(|remaining| delay_ms.min(remaining))
+                .unwrap_or(0);
 
-        if delayed {
             info!(
-                "Delaying getHeader response: elapsed_ms: {}, response_ms: {}, receive_by_ms: {}, delay_ms: {}",
                 elapsed_ms,
                 response_ms,
                 receive_by_ms,
-                delay_ms
+                delay_ms,
+                "Delaying getHeader response"
             );
         }
 
