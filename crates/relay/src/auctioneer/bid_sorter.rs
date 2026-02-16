@@ -79,6 +79,7 @@ impl ForkState {
         trace: Option<&mut SubmissionTrace>,
         is_optimistic: bool,
         top_bid_tx: &tokio::sync::broadcast::Sender<TopBidUpdate>,
+        reason: &'static str,
     ) {
         let mut best = None;
 
@@ -94,7 +95,15 @@ impl ForkState {
         }
 
         if let Some((best_pk, best_bid)) = best {
-            self.update_top_bid(bid_slot, best_pk, *best_bid, trace, is_optimistic, top_bid_tx);
+            self.update_top_bid(
+                bid_slot,
+                best_pk,
+                *best_bid,
+                trace,
+                is_optimistic,
+                top_bid_tx,
+                reason,
+            );
         } else {
             self.curr_bid = None;
         }
@@ -108,6 +117,7 @@ impl ForkState {
         trace: Option<&mut SubmissionTrace>,
         is_optimistic: bool,
         top_bid_tx: &tokio::sync::broadcast::Sender<TopBidUpdate>,
+        reason: &'static str,
     ) {
         let now_ns = utcnow_ns();
 
@@ -123,7 +133,18 @@ impl ForkState {
         };
 
         let _ = top_bid_tx.send(top_bid_update);
-        trace!(?builder_pubkey, value =? bid.value, "updating best bid");
+        trace!(
+            event = "top_bid_update",
+            reason,
+            slot = bid_slot,
+            parent_hash = %bid.parent_hash,
+            block_hash = %bid.block_hash,
+            block_number = bid.block_number,
+            ?builder_pubkey,
+            value = ?bid.value,
+            is_optimistic,
+            "updated top bid"
+        );
         self.curr_bid = Some((builder_pubkey, bid));
 
         if let Some(trace) = trace {
@@ -242,6 +263,7 @@ impl BidSorter {
                         Some(trace),
                         is_optimistic,
                         &self.top_bid_tx,
+                        "new_higher_bid",
                     );
 
                     true
@@ -253,6 +275,7 @@ impl BidSorter {
                         Some(trace),
                         is_optimistic,
                         &self.top_bid_tx,
+                        "cancel_recompute",
                     );
 
                     false
@@ -270,6 +293,7 @@ impl BidSorter {
                     Some(trace),
                     is_optimistic,
                     &self.top_bid_tx,
+                    "first_bid",
                 );
 
                 true
@@ -289,7 +313,13 @@ impl BidSorter {
             if let Some((curr, _)) = &state.curr_bid &&
                 *curr == demoted
             {
-                state.traverse_update_top_bid(self.curr_bid_slot, None, false, &self.top_bid_tx);
+                state.traverse_update_top_bid(
+                    self.curr_bid_slot,
+                    None,
+                    false,
+                    &self.top_bid_tx,
+                    "demotion_recompute",
+                );
             }
         }
     }
@@ -308,18 +338,30 @@ impl BidSorter {
         let tel = std::mem::take(&mut self.local_telemetry);
 
         let avg_sub_process = avg_duration(tel.subs_process_time, tel.subs);
-        let fork_report: Vec<_> = self
-            .forks
-            .iter()
-            .map(|(k, s)| format!("parent: {k}, subs: {}, top_bids: {}", s.subs, s.top_bids))
-            .collect();
+        let top_bid_updates: u32 = self.forks.values().map(|s| s.top_bids).sum();
+        let forks = self.forks.len();
 
         info!(
             slot = self.curr_bid_slot,
             valid_subs = tel.subs,
+            top_bid_updates,
+            forks,
             ?avg_sub_process,
-            ?fork_report,
-            "bid sorter telemetry"
-        )
+            "bid sorter slot summary"
+        );
+
+        if tracing::enabled!(tracing::Level::TRACE) {
+            let fork_report: Vec<_> = self
+                .forks
+                .iter()
+                .map(|(k, s)| format!("parent: {k}, subs: {}, top_bids: {}", s.subs, s.top_bids))
+                .collect();
+
+            trace!(
+                slot = self.curr_bid_slot,
+                ?fork_report,
+                "bid sorter fork telemetry"
+            );
+        }
     }
 }
