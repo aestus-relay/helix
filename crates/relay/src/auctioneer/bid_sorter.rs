@@ -263,7 +263,7 @@ impl BidSorter {
                         Some(trace),
                         is_optimistic,
                         &self.top_bid_tx,
-                        "new_higher_bid",
+                        "higher_bid",
                     );
 
                     true
@@ -275,7 +275,7 @@ impl BidSorter {
                         Some(trace),
                         is_optimistic,
                         &self.top_bid_tx,
-                        "cancel_recompute",
+                        "cancel",
                     );
 
                     false
@@ -318,7 +318,7 @@ impl BidSorter {
                     None,
                     false,
                     &self.top_bid_tx,
-                    "demotion_recompute",
+                    "demotion",
                 );
             }
         }
